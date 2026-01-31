@@ -1,0 +1,48 @@
+/* Metrics Panel */
+
+.metrics-section {
+    grid-column: 2;
+    grid-row: 2;
+}
+
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--gap-sm);
+}
+
+.metric-card {
+    background: var(--bg-card);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: var(--gap-md);
+    text-align: center;
+    transition: all 0.3s ease;
+}
+
+.metric-card:hover {
+    background: var(--bg-card-hover);
+    transform: translateY(-2px);
+}
+
+.metric-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+    letter-spacing: 1px;
+}
+
+.metric-value {
+    font-family: var(--font-heading);
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--accent-secondary);
+}
+
+@media (max-width: 1200px) {
+    .metrics-section {
+        grid-column: 1;
+        grid-row: 3;
+    }
+}

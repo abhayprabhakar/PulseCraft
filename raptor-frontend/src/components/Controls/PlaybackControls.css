@@ -1,0 +1,151 @@
+/* Playback Controls */
+
+.controls-panel {
+    background: var(--bg-secondary);
+    border-top: 2px solid var(--accent-primary);
+    padding: var(--gap-lg) var(--gap-xl);
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+}
+
+.playback-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-lg);
+}
+
+.control-btn {
+    width: 50px;
+    height: 50px;
+    border-radius: 8px;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    border: 1px solid var(--border-color);
+}
+
+.control-btn svg {
+    width: 24px;
+    height: 24px;
+}
+
+.control-btn:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--accent-secondary);
+    transform: translateY(-2px);
+}
+
+.control-btn.primary {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+}
+
+.control-btn.primary:hover {
+    background: var(--accent-secondary);
+    border-color: var(--accent-secondary);
+}
+
+.speed-control {
+    display: flex;
+    gap: var(--gap-sm);
+}
+
+.speed-btn {
+    padding: 8px 16px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    font-family: var(--font-heading);
+    font-size: 14px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.speed-btn:hover {
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+}
+
+.speed-btn.active {
+    background: var(--accent-primary);
+    color: var(--text-primary);
+    border-color: var(--accent-primary);
+}
+
+.progress-container {
+    flex: 1;
+}
+
+.progress-bar {
+    position: relative;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+}
+
+.progress-fill {
+    height: 100%;
+    background: var(--accent-primary);
+    border-radius: 4px;
+    transition: width 0.1s linear;
+}
+
+.progress-bar input[type="range"] {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 8px;
+    opacity: 0;
+}
+
+.export-controls {
+    display: flex;
+    gap: var(--gap-md);
+}
+
+.export-btn {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    padding: 10px 20px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    font-size: 14px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.export-btn svg {
+    width: 18px;
+    height: 18px;
+}
+
+.export-btn:hover:not(:disabled) {
+    background: var(--bg-card-hover);
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+    transform: translateY(-2px);
+}
+
+.export-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+@media (max-width: 768px) {
+    .playback-controls {
+        flex-wrap: wrap;
+    }
+
+    .export-controls {
+        flex-direction: column;
+    }
+}
