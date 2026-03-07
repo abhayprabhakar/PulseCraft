@@ -70,7 +70,7 @@ const SettingsPage: React.FC = () => {
         return url.startsWith('http') ? url : `${base}${url}`;
     };
 
-    const handleLogout = () => { logout(); navigate('/login'); };
+    const handleLogout = () => { logout(); navigate('/signin'); };
 
     const handleSaveProfile = async () => {
         setSavingProfile(true);

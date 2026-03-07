@@ -49,8 +49,8 @@ api.interceptors.response.use(
             localStorage.removeItem('currentBike');
 
             const currentPath = window.location.pathname;
-            if (currentPath !== '/login') {
-                window.location.assign('/login');
+            if (currentPath !== '/signin' && currentPath !== '/signup') {
+                window.location.assign('/signin');
             }
         }
 
@@ -184,19 +184,6 @@ export interface TelemetryChatHistoryTurn {
     timestamp?: number;
 }
 
-export interface TelemetryPoint {
-    lat?: number;
-    lng?: number;
-    speed_kph?: number;
-    rpm?: number;
-    gear?: number;
-    coolant_temp_c?: number;
-    lean_angle?: number; // Added lean_angle
-    timestamp_ms: number;
-    pointKey: string;
-    timeLabel: string;
-    elapsedLabel?: string;
-}
 export interface TelemetryChatRequest {
     prompt: string;
     start_time_ms: number;

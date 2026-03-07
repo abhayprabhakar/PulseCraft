@@ -32,7 +32,7 @@ const ProfilePage: React.FC = () => {
 
     const handleLogout = () => {
         logout();
-        navigate('/login');
+        navigate('/signin');
     };
 
     const handleSave = async () => {

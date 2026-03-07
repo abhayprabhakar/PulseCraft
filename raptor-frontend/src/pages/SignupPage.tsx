@@ -25,7 +25,7 @@ const SignupPage: React.FC = () => {
         try {
             await authApi.register(formData);
             alert("Registration successful! Please log in.");
-            navigate('/login');
+            navigate('/signin');
         } catch (err: any) {
             console.error(err);
             setError(err.response?.data?.detail || 'Registration failed. Try again.');
@@ -125,7 +125,7 @@ const SignupPage: React.FC = () => {
                     </button>
                 </form>
                 <div className="auth-footer">
-                    Already have an account? <Link to="/login">Log In</Link>
+                    Already have an account? <Link to="/signin">Log In</Link>
                 </div>
             </div>
             <style>{`

@@ -15,7 +15,12 @@ import './styles/global.css';
 
 const ProtectedRoute = () => {
     const { isAuthenticated } = useAuth();
-    return isAuthenticated ? <Outlet /> : <Navigate to="/login" replace />;
+    return isAuthenticated ? <Outlet /> : <Navigate to="/signin" replace />;
+};
+
+const AuthRedirect = () => {
+    const { isAuthenticated } = useAuth();
+    return <Navigate to={isAuthenticated ? '/dashboard' : '/signin'} replace />;
 };
 
 function App() {
@@ -23,7 +28,8 @@ function App() {
         <BrowserRouter>
             <AuthProvider>
                 <Routes>
-                    <Route path="/login" element={<LoginPage />} />
+                    <Route path="/signin" element={<LoginPage />} />
+                    <Route path="/login" element={<Navigate to="/signin" replace />} />
                     <Route path="/signup" element={<SignupPage />} />
 
                     {/* Protected Routes */}
@@ -42,6 +48,8 @@ function App() {
                             <Route path="garage/:bikeId" element={<BikeDocumentsPage />} />
                         </Route>
                     </Route>
+
+                    <Route path="*" element={<AuthRedirect />} />
                 </Routes>
             </AuthProvider>
         </BrowserRouter>
