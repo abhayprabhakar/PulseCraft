@@ -11,16 +11,19 @@ from .routers import rides, auth, favorites, bikes
 # Create DB tables
 Base.metadata.create_all(bind=engine)
 
+from sqlalchemy import inspect
 def _ensure_ride_schema_columns() -> None:
-    with engine.begin() as conn:
-        try:
-            result = conn.execute(text("PRAGMA table_info(rides)"))
-            ride_columns = {row[1] for row in result.fetchall()}
-        except Exception:
-            ride_columns = set()
+    try:
+        inspector = inspect(engine)
+        if not inspector.has_table("rides"):
+            return # Let Base.metadata.create_all handle new tables
 
-        if 'laps' not in ride_columns:
-            conn.execute(text("ALTER TABLE rides ADD COLUMN laps JSON"))
+        columns = [col['name'] for col in inspector.get_columns("rides")]
+        if 'laps' not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE rides ADD COLUMN laps JSON"))
+    except Exception as e:
+        print(f"Schema check failed gracefully: {e}")
 
 _ensure_ride_schema_columns()
 
