@@ -16,7 +16,12 @@ if os.path.exists("/app/data"):
 if os.getenv("DB_PATH"):
     db_file_path = os.getenv("DB_PATH")
 
-SQLALCHEMY_DATABASE_URL = f"sqlite:///{db_file_path}"
+if db_file_path.startswith("/"):
+    # For absolute paths like /tmp/rides.db
+    SQLALCHEMY_DATABASE_URL = f"sqlite:///{db_file_path}"
+else:
+    # For relative paths like ./rides.db
+    SQLALCHEMY_DATABASE_URL = f"sqlite:///{db_file_path}"
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
