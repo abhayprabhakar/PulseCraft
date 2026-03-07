@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, JSON, LargeBinary
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, JSON, LargeBinary, UniqueConstraint
 from sqlalchemy.orm import relationship
 from .database import Base
 from datetime import datetime
@@ -131,3 +131,41 @@ class UploadedFile(Base):
     content = Column(LargeBinary, nullable=False)
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class RideUploadSession(Base):
+    __tablename__ = "ride_upload_sessions"
+
+    id = Column(String, primary_key=True, index=True)
+    ride_id = Column(String, nullable=False, index=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    total_chunks = Column(Integer, nullable=False)
+    uploaded_chunks = Column(Integer, nullable=False, default=0)
+    content_encoding = Column(String, nullable=False, default="gzip")
+    content_type = Column(String, nullable=False, default="application/json")
+    status = Column(String, nullable=False, default="pending")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+
+    chunks = relationship(
+        "RideUploadChunk",
+        back_populates="session",
+        cascade="all, delete-orphan",
+    )
+
+
+class RideUploadChunk(Base):
+    __tablename__ = "ride_upload_chunks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(String, ForeignKey("ride_upload_sessions.id"), nullable=False, index=True)
+    chunk_index = Column(Integer, nullable=False)
+    byte_size = Column(Integer, nullable=False, default=0)
+    content = Column(LargeBinary, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    session = relationship("RideUploadSession", back_populates="chunks")
+
+    __table_args__ = (
+        UniqueConstraint("session_id", "chunk_index", name="uq_ride_upload_chunk_session_index"),
+    )

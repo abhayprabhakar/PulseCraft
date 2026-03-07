@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Request
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Request, Form
 from sqlalchemy.orm import Session
 from typing import List, Optional, Any, Dict, Callable
 import pandas as pd
@@ -1901,6 +1901,205 @@ def _persist_uploaded_ride(ride_data: RideCreate, db: Session, current_user: Use
     db.refresh(new_ride)
 
     return {"status": "success", "ride_id": new_ride.id}
+
+
+def _get_chunk_limits() -> Dict[str, int]:
+    max_chunks = int(os.getenv("MAX_RIDE_UPLOAD_CHUNKS", "128"))
+    max_chunk_bytes = int(os.getenv("MAX_RIDE_UPLOAD_CHUNK_BYTES", "1048576"))
+    max_compressed_bytes = int(os.getenv("MAX_RIDE_UPLOAD_COMPRESSED_BYTES", "52428800"))
+    return {
+        "max_chunks": max_chunks,
+        "max_chunk_bytes": max_chunk_bytes,
+        "max_compressed_bytes": max_compressed_bytes,
+    }
+
+
+@router.post("/upload_chunked/init", status_code=status.HTTP_201_CREATED)
+def init_chunked_ride_upload(
+    payload: Dict[str, Any],
+    db: Session = Depends(database.get_db),
+    current_user: User = Depends(auth.get_current_user),
+):
+    ride_id = str(payload.get("ride_id") or "").strip()
+    if not ride_id:
+        raise HTTPException(status_code=400, detail="ride_id is required")
+
+    total_chunks_raw = payload.get("total_chunks")
+    try:
+        total_chunks = int(total_chunks_raw)
+    except Exception:
+        raise HTTPException(status_code=400, detail="total_chunks must be an integer")
+
+    limits = _get_chunk_limits()
+    if total_chunks <= 0:
+        raise HTTPException(status_code=400, detail="total_chunks must be > 0")
+    if total_chunks > limits["max_chunks"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"total_chunks exceeds limit ({limits['max_chunks']})",
+        )
+
+    content_encoding = str(payload.get("content_encoding") or "gzip")
+    content_type = str(payload.get("content_type") or "application/json")
+
+    session = models.RideUploadSession(
+        id=str(uuid.uuid4()),
+        ride_id=ride_id,
+        owner_id=current_user.id,
+        total_chunks=total_chunks,
+        uploaded_chunks=0,
+        content_encoding=content_encoding,
+        content_type=content_type,
+        status="pending",
+    )
+    db.add(session)
+    db.commit()
+
+    return {
+        "upload_id": session.id,
+        "ride_id": ride_id,
+        "total_chunks": total_chunks,
+        "status": "pending",
+    }
+
+
+@router.post("/upload_chunked/{upload_id}/chunk", status_code=status.HTTP_201_CREATED)
+async def upload_ride_chunk(
+    upload_id: str,
+    chunk_index: int = Form(...),
+    chunk: UploadFile = File(...),
+    db: Session = Depends(database.get_db),
+    current_user: User = Depends(auth.get_current_user),
+):
+    session = db.query(models.RideUploadSession).filter(
+        models.RideUploadSession.id == upload_id,
+        models.RideUploadSession.owner_id == current_user.id,
+    ).first()
+
+    if not session:
+        raise HTTPException(status_code=404, detail="Upload session not found")
+    if session.status != "pending":
+        raise HTTPException(status_code=400, detail=f"Upload session is {session.status}")
+    if chunk_index < 0 or chunk_index >= session.total_chunks:
+        raise HTTPException(status_code=400, detail="chunk_index out of range")
+
+    payload = await chunk.read()
+    if not payload:
+        raise HTTPException(status_code=400, detail="Empty chunk payload")
+
+    limits = _get_chunk_limits()
+    if len(payload) > limits["max_chunk_bytes"]:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"Chunk too large ({len(payload)} bytes). "
+                f"Limit is {limits['max_chunk_bytes']} bytes"
+            ),
+        )
+
+    existing_chunk = db.query(models.RideUploadChunk).filter(
+        models.RideUploadChunk.session_id == session.id,
+        models.RideUploadChunk.chunk_index == chunk_index,
+    ).first()
+
+    if existing_chunk:
+        existing_chunk.content = payload
+        existing_chunk.byte_size = len(payload)
+    else:
+        db.add(models.RideUploadChunk(
+            session_id=session.id,
+            chunk_index=chunk_index,
+            byte_size=len(payload),
+            content=payload,
+        ))
+
+    db.commit()
+
+    uploaded_count = db.query(models.RideUploadChunk).filter(
+        models.RideUploadChunk.session_id == session.id,
+    ).count()
+    session.uploaded_chunks = uploaded_count
+    db.commit()
+
+    return {
+        "upload_id": session.id,
+        "chunk_index": chunk_index,
+        "uploaded_chunks": uploaded_count,
+        "total_chunks": session.total_chunks,
+        "status": "pending",
+    }
+
+
+@router.post("/upload_chunked/{upload_id}/complete", status_code=status.HTTP_201_CREATED)
+def complete_chunked_ride_upload(
+    upload_id: str,
+    db: Session = Depends(database.get_db),
+    current_user: User = Depends(auth.get_current_user),
+):
+    session = db.query(models.RideUploadSession).filter(
+        models.RideUploadSession.id == upload_id,
+        models.RideUploadSession.owner_id == current_user.id,
+    ).first()
+
+    if not session:
+        raise HTTPException(status_code=404, detail="Upload session not found")
+
+    if session.status == "completed":
+        return {
+            "status": "already_completed",
+            "ride_id": session.ride_id,
+            "upload_id": session.id,
+        }
+
+    ordered_chunks = db.query(models.RideUploadChunk).filter(
+        models.RideUploadChunk.session_id == session.id,
+    ).order_by(models.RideUploadChunk.chunk_index.asc()).all()
+
+    if len(ordered_chunks) != session.total_chunks:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Upload incomplete: "
+                f"received {len(ordered_chunks)}/{session.total_chunks} chunks"
+            ),
+        )
+
+    for expected_idx, chunk in enumerate(ordered_chunks):
+        if chunk.chunk_index != expected_idx:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Missing chunk index {expected_idx}",
+            )
+
+    joined_payload = b"".join(chunk.content for chunk in ordered_chunks)
+    limits = _get_chunk_limits()
+    if len(joined_payload) > limits["max_compressed_bytes"]:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                "Compressed upload too large. "
+                f"Limit is {limits['max_compressed_bytes']} bytes"
+            ),
+        )
+
+    ride_data = _parse_ride_create_payload(
+        raw_payload=joined_payload,
+        content_encoding=session.content_encoding,
+        content_type=session.content_type,
+    )
+
+    result = _persist_uploaded_ride(ride_data, db, current_user)
+
+    session.status = "completed"
+    session.completed_at = datetime.utcnow()
+    session.uploaded_chunks = session.total_chunks
+    db.query(models.RideUploadChunk).filter(
+        models.RideUploadChunk.session_id == session.id,
+    ).delete(synchronize_session=False)
+    db.commit()
+
+    result["upload_id"] = session.id
+    return result
 
 @router.post("/upload", status_code=status.HTTP_201_CREATED)
 async def upload_ride(request: Request, db: Session = Depends(database.get_db), current_user: User = Depends(auth.get_current_user)):
