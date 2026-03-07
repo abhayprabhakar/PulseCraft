@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, JSON
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, JSON, LargeBinary
 from sqlalchemy.orm import relationship
 from .database import Base
 from datetime import datetime
@@ -119,3 +119,15 @@ class BikeDocument(Base):
     notes = Column(String, nullable=True)
 
     bike = relationship("Bike", back_populates="documents")
+
+
+class UploadedFile(Base):
+    __tablename__ = "uploaded_files"
+
+    id = Column(String, primary_key=True, index=True)
+    filename = Column(String, nullable=False)
+    content_type = Column(String, nullable=False, default="application/octet-stream")
+    byte_size = Column(Integer, nullable=False, default=0)
+    content = Column(LargeBinary, nullable=False)
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

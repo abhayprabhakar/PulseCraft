@@ -62,9 +62,7 @@ def update_user_me(user_update: schemas.UserUpdate, db: Session = Depends(databa
     return current_user
 
 from fastapi import UploadFile, File
-import shutil
-import os
-import uuid
+from ..storage import save_upload_to_db
 
 @router.post("/users/me/avatar", response_model=schemas.User)
 def upload_avatar(
@@ -76,18 +74,12 @@ def upload_avatar(
     if not file.content_type.startswith('image/'):
         raise HTTPException(status_code=400, detail="File must be an image")
     
-    # Generate unique filename
-    file_ext = os.path.splitext(file.filename)[1]
-    unique_filename = f"{uuid.uuid4()}{file_ext}"
-    file_path = f"uploads/{unique_filename}"
-    
-    # Save file
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-        
     # Update user profile
-    # URL will be relative, triggering static mount
-    image_url = f"/uploads/{unique_filename}"
+    try:
+        image_url = save_upload_to_db(db, file, owner_id=current_user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
     current_user.profile_picture_url = image_url
     db.commit()
     db.refresh(current_user)

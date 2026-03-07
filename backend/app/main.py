@@ -6,7 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from .database import engine, Base
-from .routers import rides, auth, favorites, bikes
+from .routers import rides, auth, favorites, bikes, files as files_router
+from .storage import get_uploads_dir
 
 # Create DB tables
 Base.metadata.create_all(bind=engine)
@@ -53,16 +54,16 @@ app.add_middleware(
 from fastapi.staticfiles import StaticFiles
 import os
 
-# Ensure uploads directory exists
-os.makedirs("uploads", exist_ok=True)
+uploads_dir = get_uploads_dir()
 
 # Mount the uploads directory to be served at /uploads
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 
 app.include_router(auth.router)
 app.include_router(rides.router)
 app.include_router(favorites.router)
 app.include_router(bikes.router)
+app.include_router(files_router.router)
 
 @app.get("/")
 def read_root():

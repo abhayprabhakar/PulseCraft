@@ -4,46 +4,32 @@ from sqlalchemy.orm import sessionmaker
 
 import os
 
-# Check if running in Docker (or if /app/data exists)
-# Default to local relative path
-db_file_path = "./rides.db"
+database_url = os.getenv("DATABASE_URL") or os.getenv("SQLALCHEMY_DATABASE_URL")
 
-# If operating inside the container with volume mounted
-if os.path.exists("/app/data"):
-    db_file_path = "/app/data/rides.db"
-    
-# Allow override via ENV
-if os.getenv("DB_PATH"):
-    db_file_path = os.getenv("DB_PATH")
-
-if db_file_path.startswith("postgres"):
-    # If the user provides a full postgres URL
-    SQLALCHEMY_DATABASE_URL = db_file_path
-    
-    # Supabase uses postgresql://, but sometimes users copy postgres://
-    if SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
-        SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
-        
-    engine = create_engine(SQLALCHEMY_DATABASE_URL)
+if database_url:
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
+    SQLALCHEMY_DATABASE_URL = database_url
 else:
-    if db_file_path.startswith("/"):
-        # For absolute paths like /tmp/rides.db
-        SQLALCHEMY_DATABASE_URL = f"sqlite:///{db_file_path}"
-    else:
-        # For relative paths like ./rides.db
-        SQLALCHEMY_DATABASE_URL = f"sqlite:///{db_file_path}"
+    # Check if running in Docker (or if /app/data exists)
+    # Default to local relative path
+    db_file_path = "./rides.db"
 
-    # Ensure the directory exists before SQLAlchemy tries to create the file
-    db_dir = os.path.dirname(db_file_path)
-    if db_dir and not os.path.exists(db_dir):
-        try:
-            os.makedirs(db_dir, exist_ok=True)
-        except Exception as e:
-            print(f"Warning: Could not create directory {db_dir}: {e}")
+    # If operating inside the container with volume mounted
+    if os.path.exists("/app/data"):
+        db_file_path = "/app/data/rides.db"
 
-    engine = create_engine(
-        SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
-    )
+    # Allow override via ENV
+    if os.getenv("DB_PATH"):
+        db_file_path = os.getenv("DB_PATH")
+
+    SQLALCHEMY_DATABASE_URL = f"sqlite:///{db_file_path}"
+
+engine_kwargs = {"pool_pre_ping": True}
+if SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
+    engine_kwargs["connect_args"] = {"check_same_thread": False}
+
+engine = create_engine(SQLALCHEMY_DATABASE_URL, **engine_kwargs)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

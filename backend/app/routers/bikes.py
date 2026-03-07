@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import List
 from .. import database, models, schemas, auth
+from ..storage import save_upload_to_db
 import os
-import shutil
 import uuid
 
 router = APIRouter(
@@ -88,17 +88,12 @@ def upload_bike_image(
     if not file.content_type.startswith('image/'):
         raise HTTPException(status_code=400, detail="File must be an image")
     
-    # Generate unique filename
-    file_ext = os.path.splitext(file.filename)[1]
-    unique_filename = f"bike_{bike_id}_{uuid.uuid4()}{file_ext}"
-    file_path = f"uploads/{unique_filename}"
-    
-    # Save file
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-        
     # Update bike
-    image_url = f"/uploads/{unique_filename}"
+    try:
+        image_url = save_upload_to_db(db, file, owner_id=current_user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
     bike.image_url = image_url
     db.commit()
     db.refresh(bike)
@@ -192,13 +187,12 @@ def upload_bike_document_pdf(
     if ext != ".pdf":
         ext = ".pdf"
 
-    unique_filename = f"bike_{bike_id}_{doc_type}_{uuid.uuid4()}{ext}"
-    file_path = f"uploads/{unique_filename}"
-
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
-    pdf_url = f"/uploads/{unique_filename}"
+    upload_name = f"bike_{bike_id}_{doc_type}_{uuid.uuid4()}{ext}"
+    file.filename = upload_name
+    try:
+        pdf_url = save_upload_to_db(db, file, owner_id=current_user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
     doc = _get_or_create_bike_document(db, bike_id)
     setattr(doc, allowed_doc_types[doc_type], pdf_url)
