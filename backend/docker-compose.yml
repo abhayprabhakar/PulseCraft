@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    container_name: raptor_backend
+    ports:
+      - "8008:8008"
+    volumes:
+      - .:/app
+      - ./uploads:/app/uploads
+      - backend_data:/app/data
+    environment:
+      - SECRET_KEY=supersecretkey_raptor_prod_xyz
+      - DATABASE_URL=sqlite:///./data/raptor.db
+    restart: unless-stopped
+
+volumes:
+  backend_data:
