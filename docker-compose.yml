@@ -3,12 +3,12 @@ version: '3.8'
 services:
   backend:
     build:
-      context: ./pulsecraft-bike/backend
+      context: ./backend
       dockerfile: Dockerfile
     ports:
       - "8008:8008"
     volumes:
-      - ./pulsecraft-bike/backend:/app
+      - ./backend:/app
     environment:
       # We know the frontend connects to 8008 locally. 
       # Vercel needs proper env vars injected for production.
