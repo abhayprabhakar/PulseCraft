@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Request
 from sqlalchemy.orm import Session
 from typing import List, Optional, Any, Dict, Callable
 import pandas as pd
@@ -6,6 +6,7 @@ import numpy as np
 import io
 import re
 import json
+import gzip
 import httpx
 from datetime import datetime
 import uuid
@@ -1791,22 +1792,70 @@ def _normalize_laps(raw_laps: Optional[List[Dict[str, Any]]]) -> List[Dict[str, 
     normalized.sort(key=lambda item: (item['lap_number'], item['started_at']))
     return normalized
 
-@router.post("/upload", status_code=status.HTTP_201_CREATED)
-def upload_ride(ride_data: RideCreate, db: Session = Depends(database.get_db), current_user: User = Depends(auth.get_current_user)):
-    # 1. Check if ride exists
+
+def _looks_like_gzip_payload(payload: bytes) -> bool:
+    return len(payload) >= 2 and payload[0] == 0x1F and payload[1] == 0x8B
+
+
+def _parse_ride_create_payload(
+    raw_payload: bytes,
+    content_encoding: str = "",
+    content_type: str = "",
+) -> RideCreate:
+    if not raw_payload:
+        raise HTTPException(status_code=400, detail="Empty request body")
+
+    encoding = (content_encoding or "").lower()
+    mime_type = (content_type or "").lower()
+    parsed_bytes = raw_payload
+
+    should_decompress = (
+        "gzip" in encoding
+        or "application/gzip" in mime_type
+        or _looks_like_gzip_payload(raw_payload)
+    )
+
+    if should_decompress:
+        try:
+            parsed_bytes = gzip.decompress(raw_payload)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid gzip-compressed upload payload")
+
+    max_json_bytes = int(os.getenv("MAX_RIDE_UPLOAD_JSON_BYTES", "26214400"))
+    if len(parsed_bytes) > max_json_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                "Ride upload payload too large after decompression. "
+                f"Limit is {max_json_bytes} bytes."
+            ),
+        )
+
+    try:
+        payload_obj = json.loads(parsed_bytes.decode("utf-8"))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON in ride upload payload")
+
+    if not isinstance(payload_obj, dict):
+        raise HTTPException(status_code=400, detail="Ride upload payload must be a JSON object")
+
+    try:
+        return RideCreate(**payload_obj)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid ride upload fields: {str(exc)}")
+
+
+def _persist_uploaded_ride(ride_data: RideCreate, db: Session, current_user: User):
     existing = db.query(Ride).filter(Ride.id == ride_data.id).first()
     if existing:
         return {"status": "already_exists", "ride_id": existing.id}
 
-    # 2. Process Data with Pandas
     df = pd.DataFrame(ride_data.frames)
-    
-    # Calculate stats
+
     max_speed = float(df['speed_kph'].max()) if not df.empty and 'speed_kph' in df else 0.0
     avg_speed = float(df['speed_kph'].mean()) if not df.empty and 'speed_kph' in df else 0.0
     max_rpm = int(df['rpm'].max()) if not df.empty and 'rpm' in df else 0
-    
-    # Lean angle stats (assuming negative is left, positive is right)
+
     max_lean_left = 0.0
     max_lean_right = 0.0
     if not df.empty and 'lean_angle' in df:
@@ -1815,11 +1864,9 @@ def upload_ride(ride_data: RideCreate, db: Session = Depends(database.get_db), c
         max_lean_left = abs(float(left_leans.min())) if not left_leans.empty else 0.0
         max_lean_right = float(right_leans.max()) if not right_leans.empty else 0.0
 
-    # Duration
     duration = compute_duration_seconds(df)
     laps = _normalize_laps(ride_data.laps)
 
-    # GPS distance
     total_distance_km = 0.0
     if not df.empty and 'lat' in df.columns and 'lng' in df.columns:
         lat_s = pd.to_numeric(df['lat'], errors='coerce')
@@ -1848,12 +1895,22 @@ def upload_ride(ride_data: RideCreate, db: Session = Depends(database.get_db), c
         owner_id=current_user.id,
         bike_id=ride_data.bike_id
     )
-    
+
     db.add(new_ride)
     db.commit()
     db.refresh(new_ride)
-    
+
     return {"status": "success", "ride_id": new_ride.id}
+
+@router.post("/upload", status_code=status.HTTP_201_CREATED)
+async def upload_ride(request: Request, db: Session = Depends(database.get_db), current_user: User = Depends(auth.get_current_user)):
+    raw_payload = await request.body()
+    ride_data = _parse_ride_create_payload(
+        raw_payload=raw_payload,
+        content_encoding=request.headers.get("content-encoding", ""),
+        content_type=request.headers.get("content-type", ""),
+    )
+    return _persist_uploaded_ride(ride_data, db, current_user)
 
 
 @router.post("/upload_csv", status_code=status.HTTP_201_CREATED)
