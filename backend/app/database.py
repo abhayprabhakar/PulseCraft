@@ -4,6 +4,30 @@ from sqlalchemy.orm import sessionmaker
 
 import os
 
+
+def _resolve_sqlite_db_path() -> str:
+    # Explicit override always wins
+    db_path_override = os.getenv("DB_PATH")
+    if db_path_override:
+        return db_path_override
+
+    # Container volume path (local/docker)
+    if os.path.exists("/app/data"):
+        return "/app/data/rides.db"
+
+    # Vercel serverless runtime has read-only /var/task, writable /tmp
+    if os.getenv("VERCEL") or os.getenv("VERCEL_ENV"):
+        return "/tmp/rides.db"
+
+    # Local default
+    default_path = "./rides.db"
+    default_dir = os.path.dirname(os.path.abspath(default_path)) or "."
+    if os.access(default_dir, os.W_OK):
+        return default_path
+
+    # Generic serverless/read-only fallback
+    return "/tmp/rides.db"
+
 database_url = os.getenv("DATABASE_URL") or os.getenv("SQLALCHEMY_DATABASE_URL")
 
 if database_url:
@@ -11,17 +35,14 @@ if database_url:
         database_url = database_url.replace("postgres://", "postgresql://", 1)
     SQLALCHEMY_DATABASE_URL = database_url
 else:
-    # Check if running in Docker (or if /app/data exists)
-    # Default to local relative path
-    db_file_path = "./rides.db"
+    db_file_path = _resolve_sqlite_db_path()
 
-    # If operating inside the container with volume mounted
-    if os.path.exists("/app/data"):
-        db_file_path = "/app/data/rides.db"
-
-    # Allow override via ENV
-    if os.getenv("DB_PATH"):
-        db_file_path = os.getenv("DB_PATH")
+    db_dir = os.path.dirname(os.path.abspath(db_file_path))
+    if db_dir and not os.path.exists(db_dir):
+        try:
+            os.makedirs(db_dir, exist_ok=True)
+        except Exception:
+            pass
 
     SQLALCHEMY_DATABASE_URL = f"sqlite:///{db_file_path}"
 
