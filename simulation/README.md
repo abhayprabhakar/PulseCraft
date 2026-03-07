@@ -26,7 +26,7 @@ pip install -r requirements.txt
 python api.py
 ```
 
-The API will be available at `http://localhost:8000`
+The API will be available at `http://localhost:8008`
 
 API Endpoints:
 - `GET /api/simulation/data?lap_id=1` - Get sensor data for a lap
@@ -38,7 +38,7 @@ API Endpoints:
 ### 3. Open the Frontend
 
 Simply open `index.html` in your web browser. The frontend will:
-- Automatically connect to the API at `http://localhost:8000`
+- Automatically connect to the API at `http://localhost:8008`
 - Display the track visualization with animated bike
 - Show real-time telemetry data
 - Provide playback controls

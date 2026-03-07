@@ -1,0 +1,131 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e198]:
+    - generic [ref=e199]:
+      - button [ref=e200] [cursor=pointer]:
+        - img [ref=e201]
+      - heading "Ride at 2026-02-25 13:20:04.219409 ✎" [level=2] [ref=e204] [cursor=pointer]:
+        - text: Ride at 2026-02-25 13:20:04.219409
+        - generic [ref=e205]: ✎
+      - generic [ref=e206]:
+        - button "Analysis" [ref=e207] [cursor=pointer]:
+          - img [ref=e208]
+          - text: Analysis
+        - button "Time Series AI" [ref=e209] [cursor=pointer]:
+          - img [ref=e210]
+          - text: Time Series AI
+    - generic [ref=e7313]:
+      - generic [ref=e7314]:
+        - generic [ref=e7315]:
+          - button "Chart" [ref=e7316] [cursor=pointer]:
+            - img [ref=e7317]
+            - text: Chart
+          - button "Chat" [ref=e7321] [cursor=pointer]:
+            - img [ref=e7322]
+            - text: Chat
+        - generic [ref=e7324]: "Selected: 20:04 – 37:22"
+        - button "Hide History" [ref=e7325] [cursor=pointer]
+      - generic [ref=e7326]:
+        - generic [ref=e7327]:
+          - generic [ref=e7328]:
+            - generic [ref=e7329]: Chat Sessions
+            - button "New chat" [ref=e7330] [cursor=pointer]:
+              - img [ref=e7331]
+          - generic [ref=e7333] [cursor=pointer]:
+            - generic [ref=e7334]:
+              - generic [ref=e7335]: Give me 5 precise improvement po…
+              - generic [ref=e7336]:
+                - img [ref=e7337]
+                - text: Feb 25
+            - button "Delete session" [ref=e7340]:
+              - img [ref=e7341]
+        - generic [ref=e7344]:
+          - generic [ref=e7345]:
+            - generic [ref=e7346]:
+              - generic [ref=e7347]:
+                - heading "Telemetry Timeline" [level=3] [ref=e7348]
+                - generic [ref=e7349]:
+                  - img [ref=e7350]
+                  - text: Click a point to pin context
+              - generic [ref=e7355]:
+                - list [ref=e7357]:
+                  - listitem [ref=e7358]:
+                    - img "Gear legend icon" [ref=e7359]
+                    - text: Gear
+                  - listitem [ref=e7361]:
+                    - img "RPM legend icon" [ref=e7362]
+                    - text: RPM
+                  - listitem [ref=e7364]:
+                    - img "Speed (km/h) legend icon" [ref=e7365]
+                    - text: Speed (km/h)
+                - application [ref=e7367]:
+                  - generic [ref=e7371]:
+                    - 'slider "Min value: undefined, Max value: undefined" [ref=e7374]'
+                    - 'slider "Min value: undefined, Max value: undefined" [ref=e7376]'
+                  - generic [ref=e7395]:
+                    - generic [ref=e7396]:
+                      - generic [ref=e7398]: 21:27
+                      - generic [ref=e7400]: 23:12
+                      - generic [ref=e7402]: 24:52
+                      - generic [ref=e7404]: 26:27
+                      - generic [ref=e7406]: 27:59
+                      - generic [ref=e7408]: 29:31
+                      - generic [ref=e7410]: 31:07
+                      - generic [ref=e7412]: 32:38
+                      - generic [ref=e7414]: 34:12
+                      - generic [ref=e7416]: 35:47
+                      - generic [ref=e7418]: 37:22
+                    - generic [ref=e7419]:
+                      - generic [ref=e7421]: "0"
+                      - generic [ref=e7423]: "30"
+                      - generic [ref=e7425]: "60"
+                      - generic [ref=e7427]: "90"
+                      - generic [ref=e7429]: "120"
+                    - generic [ref=e7430]:
+                      - generic [ref=e7432]: "0"
+                      - generic [ref=e7434]: "3000"
+                      - generic [ref=e7436]: "6000"
+                      - generic [ref=e7438]: "9000"
+                      - generic [ref=e7440]: "12000"
+            - generic [ref=e7441]:
+              - generic [ref=e7444]:
+                - button "Zoom in" [ref=e7445] [cursor=pointer]: +
+                - button "Zoom out" [ref=e7446] [cursor=pointer]: −
+              - generic:
+                - generic: "Range points: 8273"
+                - generic: •
+                - generic: "Route points: 8273"
+                - generic: •
+                - generic: Click map to pin nearest point
+          - generic [ref=e7447]:
+            - generic [ref=e7448]:
+              - generic [ref=e7450]:
+                - generic [ref=e7451]:
+                  - img [ref=e7452]
+                  - text: Raptor AI
+                - paragraph [ref=e7456]:
+                  - text: Select a range of data on the chart using the
+                  - strong [ref=e7457]: brush slider
+                  - text: ", then ask me anything about your performance in that specific section!"
+              - paragraph [ref=e7471]: Give me 5 precise improvement points and include exact +HH:MM:SS times for each point.
+              - generic [ref=e7473]:
+                - generic [ref=e7474]:
+                  - img [ref=e7475]
+                  - text: Thinking...
+                - generic [ref=e7478]:
+                  - generic [ref=e7479]:
+                    - generic [ref=e7481]: Selecting telemetry range
+                    - generic [ref=e7482]: 09:00:04 PM
+                  - generic [ref=e7483]:
+                    - generic [ref=e7485]: Normalizing signals
+                    - generic [ref=e7486]: 09:00:06 PM
+                  - generic [ref=e7487]:
+                    - generic [ref=e7489]: Analyzing ride dynamics
+                    - generic [ref=e7490]: 09:00:06 PM
+                  - generic [ref=e7491]:
+                    - generic [ref=e7493]: Drafting coaching insights
+                    - generic [ref=e7494]: 09:00:07 PM
+            - generic [ref=e7459]:
+              - textbox "Ask about this data range..." [disabled] [ref=e7460]
+              - button [disabled] [ref=e7461]:
+                - img [ref=e7462]
+  - generic [ref=e7312]: "3000"

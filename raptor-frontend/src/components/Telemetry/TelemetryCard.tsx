@@ -1,5 +1,5 @@
 import React from 'react';
-import { useSimulation } from '@/contexts/SimulationContext';
+// import { useSimulation } from '@/contexts/SimulationContext';
 import { formatNumber } from '@/utils/formatters';
 import './TelemetryCard.css';
 

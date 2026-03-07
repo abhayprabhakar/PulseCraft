@@ -3,10 +3,13 @@ RAPTOR API Server - GPS-Correlated Version
 FastAPI backend for track simulation data delivery using real GPS coordinates
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
-from typing import Dict, List
+from typing import Dict, List, Optional
+import shutil
+import os
+import numpy as np
 import pandas as pd
 import json
 import io
@@ -22,8 +25,13 @@ from gps_data_generator import (
 app = FastAPI(
     title="RAPTOR API - GPS Correlated",
     description="Rider Analytics Platform for Track Optimization - GPS-Based Data API",
-    version="2.0.0"
+    version="2.1.0"
 )
+
+# Global storage for synced data
+UPLOAD_DIR = "uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+synced_session_data = {}
 
 # Enable CORS for frontend access
 app.add_middleware(
@@ -229,6 +237,93 @@ for lap_id in range(1, 4):  # 3 laps
 print("Session data ready!")
 
 
+def detect_corners(df: pd.DataFrame, lean_threshold: float = 15.0) -> List[pd.DataFrame]:
+    """Identify corner segments based on lean angle"""
+    is_corner = abs(df['lean_angle']) > lean_threshold
+    # Create groups of consecutive corner points
+    corner_groups = (is_corner != is_corner.shift()).cumsum()
+    corners = []
+    for _, group in df[is_corner].groupby(corner_groups):
+        if len(group) > 10:  # Minimum duration to be a real corner
+            corners.append(group)
+    return corners
+
+def calculate_braking_score(df: pd.DataFrame) -> float:
+    """Score 0-100. Higher is smoother. Based on accel_x jerk."""
+    # Filter for braking (negative accel_x)
+    braking = df[df['accel_x'] < -0.5]
+    if len(braking) < 10:
+        return 100.0
+    
+    # Calculate jerk (derivative of acceleration)
+    jerk = braking['accel_x'].diff().abs().mean()
+    # Normalize: assume jerk > 0.5 is bad.
+    score = max(0, 100 - (jerk * 200)) # Simple heuristic
+    return round(score, 1)
+
+def calculate_throttle_aggression(df: pd.DataFrame) -> float:
+    """Score 0-100. Higher is more aggressive. Based on throttle derivative."""
+    # Positive throttle change
+    throttle_diff = df['throttle_percent'].diff()
+    positive_diff = throttle_diff[throttle_diff > 0]
+    
+    if len(positive_diff) == 0:
+        return 0.0
+        
+    avg_rate = positive_diff.mean()
+    # 5% change per sample (20ms) is very aggressive (250% per second)
+    aggression = min(100, avg_rate * 20) 
+    return round(aggression, 1)
+
+def calculate_lean_consistency(df: pd.DataFrame) -> float:
+    """Std dev of lean angle within corners. Lower is better."""
+    corners = detect_corners(df)
+    if not corners:
+        return 0.0
+        
+    variances = []
+    for corner in corners:
+        # We want smooth consistent arc. 
+        # But lean changes during entry/exit. 
+        # Look at the middle 50% of the corner?
+        mid_idx = len(corner) // 2
+        start_q = len(corner) // 4
+        end_q = start_q * 3
+        if end_q > start_q:
+            segment = corner.iloc[start_q:end_q]
+            variances.append(segment['lean_angle'].std())
+            
+    if not variances:
+        return 0.0
+        
+    # Average std dev
+    avg_std = np.nanmean(variances)
+    return round(float(avg_std), 2)
+
+def calculate_corner_entry_delta(df: pd.DataFrame) -> float:
+    """Avg speed loss from braking to apex. Higher means harder braking/faster entry."""
+    corners = detect_corners(df)
+    deltas = []
+    
+    for corner in corners:
+        apex_idx = corner['lean_angle'].abs().idxmax()
+        apex_speed = df.loc[apex_idx, 'speed_kmph']
+        
+        # Look back 3 seconds (approx 150 frames @ 50Hz) or to start of corner
+        start_idx = corner.index[0]
+        lookback_idx = max(0, start_idx - 50) # 1 second before corner starts
+        
+        # Max speed in approaching zone
+        entry_speed = df.loc[lookback_idx:apex_idx, 'speed_kmph'].max()
+        
+        deltas.append(entry_speed - apex_speed)
+        
+    if not deltas:
+        return 0.0
+        
+    return round(float(np.mean(deltas)), 1)
+
+
 def calculate_lap_metrics(lap_data: pd.DataFrame) -> Dict:
     """Calculate performance metrics from lap data"""
     lap_time_s = lap_data['timestamp'].max() / 1000.0
@@ -245,6 +340,12 @@ def calculate_lap_metrics(lap_data: pd.DataFrame) -> Dict:
         "lateral_accel_rms": round((lap_data['accel_y'] ** 2).mean() ** 0.5, 3),
         "speed_to_lean_ratio": round(lap_data['speed_kmph'].mean() / 
                                      max(abs(lap_data['lean_angle']).mean(), 0.1), 2),
+                                     
+        # Advanced Metrics requested by user
+        "braking_smoothness_score": calculate_braking_score(lap_data),
+        "throttle_aggression_index": calculate_throttle_aggression(lap_data),
+        "lean_angle_consistency": calculate_lean_consistency(lap_data),
+        "corner_entry_speed_delta": calculate_corner_entry_delta(lap_data),
     }
     
     return metrics
@@ -399,6 +500,54 @@ async def export_json(lap_id: int = None):
     return response
 
 
+@app.post("/api/upload_csv")
+async def upload_csv(file: UploadFile = File(...)):
+    """Upload and sync CSV telemetry data"""
+    try:
+        file_path = os.path.join(UPLOAD_DIR, "latest_telemetry.csv")
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+            
+        # Parse CSV immediately to header check and load
+        df = pd.read_csv(file_path)
+        
+        # Basic validation of required columns
+        required_cols = ['timestamp', 'speed_kph', 'lean_angle', 'rpm', 'throttle_percent', 'accel_x', 'accel_y']
+        missing = [col for col in required_cols if col not in df.columns]
+        
+        # Map columns if needed (handle slight naming variations if user provided loosely)
+        # The user provided: timestamp lean_angle pitch yaw accel_x accel_y accel_z speed_kph rpm latitude longitude engine_rpm vehicle_speed_kph throttle_percent coolant_temp_c intake_pressure_kpa
+        # My data generator uses: speed_kmph, but user CSV has speed_kph. I should standardize.
+        
+        # Auto-standardize column names
+        rename_map = {
+            'speed_kph': 'speed_kmph',
+            'vehicle_speed_kph': 'speed_kmph',
+            'engine_rpm': 'rpm'
+        }
+        df.rename(columns=rename_map, inplace=True)
+        
+        # Recalculate 'lap_id' if not present based on timestamps or simple segmentation?
+        # For now, assume single session or user provides lap_id. 
+        # If no lap_id, treat as Lap 1.
+        if 'lap_id' not in df.columns:
+            df['lap_id'] = 1
+            
+        # Update current_session global with this new data
+        # Clear existing simulated data? Or keep side-by-side?
+        # User said "using all the data from csv file when it syncs", so replace.
+        global current_session
+        current_session = {}
+        
+        for lap_id in df['lap_id'].unique():
+            current_session[int(lap_id)] = df[df['lap_id'] == lap_id].reset_index(drop=True)
+            
+        return {"status": "success", "message": "Telemetry synced successfully", "laps": int(df['lap_id'].nunique())}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     import uvicorn
     print("\n🏍️  RAPTOR API - GPS Correlated Edition")
@@ -406,4 +555,4 @@ if __name__ == "__main__":
     print(f"📍 Track: Isle of Man TT ({len(GPS_TRACK_DATA)} GPS points)")
     print(f"📊 Distance: ~{round(gps_track.total_distance/1000, 1)} km")
     print("🚀 Starting server...\n")
-    uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("api:app", host="0.0.0.0", port=8008, reload=True)

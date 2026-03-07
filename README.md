@@ -1,5 +1,5 @@
 
-# PULSECRAFT  
+# RAPTOR  
 ![ESP32](https://img.shields.io/badge/ESP32-Embedded-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-Mobile-blue)
 ![BLE](https://img.shields.io/badge/Bluetooth-Low_Energy-0082FC)
@@ -7,17 +7,17 @@
 ![Status](https://img.shields.io/badge/Status-Active_Development-orange)
 ### Crafting Intelligence Into Your Ride
 
-**PULSECRAFT** is a DIY smart-bike system that transforms a conventional motorcycle into a connected, insight-driven machine using **ESP32**, **Bluetooth**, and a **mobile app** — without touching or modifying the bike’s ECU.
+**RAPTOR** is a DIY smart-bike system that transforms a conventional motorcycle into a connected, insight-driven machine using **ESP32**, **Bluetooth**, and a **mobile app** — without touching or modifying the bike’s ECU.
 
-Built and tested with the **Bajaj Pulsar NS200 (BS4)**, PULSECRAFT focuses on real-world usability, safety, and extensibility.
+Built and tested with the **Bajaj Pulsar NS200 (BS4)**, RAPTOR focuses on real-world usability, safety, and extensibility.
 
 > Simple bike. Smart brain. Zero compromises.
 
 ---
 
-## ✨ What is PULSECRAFT?
+## ✨ What is RAPTOR?
 
-PULSECRAFT is a **read-only, non-intrusive bike telemetry and rider-assistance platform** that provides:
+RAPTOR is a **read-only, non-intrusive bike telemetry and rider-assistance platform** that provides:
 
 - Real-time bike health monitoring  
 - Ride data logging  
@@ -28,7 +28,7 @@ All of this is achieved using external sensors and software intelligence — **n
 
 ---
 
-## 🎯 Why PULSECRAFT?
+## 🎯 Why RAPTOR?
 
 Most mid-range motorcycles lack accessible diagnostics and rider feedback. Riders rely on guesswork for:
 
@@ -37,7 +37,7 @@ Most mid-range motorcycles lack accessible diagnostics and rider feedback. Rider
 - Riding habits
 - Long-term wear patterns
 
-PULSECRAFT bridges this gap by giving riders **visibility, awareness, and data-driven confidence** — built by a rider, for riders.
+RAPTOR bridges this gap by giving riders **visibility, awareness, and data-driven confidence** — built by a rider, for riders.
 
 ---
 
@@ -65,7 +65,7 @@ PULSECRAFT bridges this gap by giving riders **visibility, awareness, and data-d
 ---
 
 ## 🧠 Future Roadmap
-PULSECRAFT is designed as a **platform**, not a one-off gadget.
+RAPTOR is designed as a **platform**, not a one-off gadget.
 
 Planned expansions include:
 - Riding style classification (eco / normal / aggressive)
@@ -102,6 +102,69 @@ v
 - Fully reversible installation
 - Electrical isolation & protection
 - Bike must function normally without the system
+
+### AI/LLM Architecture (Time Series AI)
+
+```mermaid
+flowchart LR
+  U[User selects time window and asks question]
+  F[Frontend Time Series AI]
+  A[FastAPI /api/v1/rides/{ride_id}/chat]
+  P[Telemetry preprocessing and normalization]
+  I[Professional insight pack generation]
+  L[Gemini 2.5 Flash response generation]
+  S[Response sanitization for rider-friendly wording]
+  R[UI answer + thinking timeline]
+
+  U --> F --> A --> P --> I --> L --> S --> R
+
+  P --> C[Scoring events segments analytics]
+  C --> I
+
+  M[MCP two-step planner path optional]
+  M --> C
+```
+
+### Multi-LLM Configuration (OpenAI-Compatible)
+
+Time Series AI chat now supports provider + model selection at request time.
+
+- Backend catalog endpoint: `GET /api/v1/rides/llm/providers`
+- Chat request supports optional selector fields:
+  - `llm_provider`
+  - `llm_model`
+
+Configure multiple providers with environment variables:
+
+```bash
+# default selector for chat requests that don't provide llm_provider
+LLM_DEFAULT_PROVIDER=gemini-default
+
+# optional provider registry (JSON object keyed by provider id)
+LLM_PROVIDERS_JSON={
+  "gemini-default": {
+    "provider_type": "gemini",
+    "label": "Gemini Flash",
+    "default_model": "gemini-2.5-flash",
+    "models": ["gemini-2.5-flash"],
+    "api_key_env": "GEMINI_API_KEY",
+    "reasoning_supported": true
+  },
+  "openai-main": {
+    "provider_type": "openai_compatible",
+    "label": "OpenAI Compatible",
+    "base_url": "https://api.openai.com/v1",
+    "chat_path": "/chat/completions",
+    "default_model": "gpt-4o-mini",
+    "models": ["gpt-4o-mini", "gpt-4.1-mini"],
+    "api_key_env": "OPENAI_API_KEY",
+    "reasoning_supported": true,
+    "timeout_seconds": 60
+  }
+}
+```
+
+Rate-limit/quota errors (for example 429 `RESOURCE_EXHAUSTED`) are now returned with user-facing metadata and shown in frontend notification banners with retry hints.
 
 ---
 

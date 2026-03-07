@@ -25,7 +25,7 @@ npm run dev
 
 Runs the app at `http://localhost:3000` with hot module replacement.
 
-The development server auto-proxies API requests to `http://localhost:8000`.
+The development server auto-proxies API requests to `http://localhost:8008`.
 
 ## 🏗️ Build
 
@@ -72,7 +72,7 @@ src/
 Create `.env` file:
 
 ```env
-VITE_API_URL=http://localhost:8000
+VITE_API_URL=http://localhost:8008
 ```
 
 ## 🎨 Features

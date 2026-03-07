@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./pulsecraft-bike/backend
+      dockerfile: Dockerfile
+    ports:
+      - "8008:8008"
+    volumes:
+      - ./pulsecraft-bike/backend:/app
+    environment:
+      # We know the frontend connects to 8008 locally. 
+      # Vercel needs proper env vars injected for production.
+      - ENV=development
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./raptor-frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./raptor-frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8008
+    depends_on:
+      - backend
+    restart: unless-stopped

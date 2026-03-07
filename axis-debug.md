@@ -1,0 +1,212 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e198]:
+    - generic [ref=e199]:
+      - button [ref=e200] [cursor=pointer]:
+        - img [ref=e201]
+      - heading "Ride at 2026-02-25 13:20:04.219409 ✎" [level=2] [ref=e204] [cursor=pointer]:
+        - text: Ride at 2026-02-25 13:20:04.219409
+        - generic [ref=e205]: ✎
+      - generic [ref=e206]:
+        - button "Analysis" [ref=e207] [cursor=pointer]:
+          - img [ref=e208]
+          - text: Analysis
+        - button "Time Series AI" [ref=e209] [cursor=pointer]:
+          - img [ref=e210]
+          - text: Time Series AI
+    - generic [ref=e7313]:
+      - generic [ref=e7852]:
+        - generic [ref=e7853]:
+          - button "Chart" [ref=e7854] [cursor=pointer]:
+            - img [ref=e7855]
+            - text: Chart
+          - button "Chat" [ref=e7859] [cursor=pointer]:
+            - img [ref=e7860]
+            - text: Chat
+        - generic [ref=e7862]: "Selected: 20:04 – 37:22"
+        - button "Hide History" [ref=e7863] [cursor=pointer]
+      - generic [ref=e7864]:
+        - generic [ref=e7865]:
+          - generic [ref=e7866]:
+            - generic [ref=e7867]: Chat Sessions
+            - button "New chat" [ref=e7868] [cursor=pointer]:
+              - img [ref=e7869]
+          - generic [ref=e7871] [cursor=pointer]:
+            - generic [ref=e7872]:
+              - generic [ref=e7873]: Give me 5 precise improvement po…
+              - generic [ref=e7874]:
+                - img [ref=e7875]
+                - text: Feb 25
+            - button "Delete session" [ref=e7878]:
+              - img [ref=e7879]
+        - generic [ref=e7882]:
+          - generic [ref=e7883]:
+            - generic [ref=e7884]:
+              - generic [ref=e7885]:
+                - heading "Telemetry Timeline" [level=3] [ref=e7886]
+                - generic [ref=e7887]:
+                  - img [ref=e7888]
+                  - text: Click a point to pin context
+              - generic [ref=e7893]:
+                - list [ref=e7895]:
+                  - listitem [ref=e7896]:
+                    - img "Gear legend icon" [ref=e7897]
+                    - text: Gear
+                  - listitem [ref=e7899]:
+                    - img "RPM legend icon" [ref=e7900]
+                    - text: RPM
+                  - listitem [ref=e7902]:
+                    - img "Speed (km/h) legend icon" [ref=e7903]
+                    - text: Speed (km/h)
+                - application [ref=e7905]:
+                  - generic [ref=e7909]:
+                    - 'slider "Min value: undefined, Max value: undefined" [ref=e7912]'
+                    - 'slider "Min value: undefined, Max value: undefined" [ref=e7914]'
+                  - generic [ref=e7933]:
+                    - generic [ref=e7934]:
+                      - generic [ref=e7936]: 21:27
+                      - generic [ref=e7938]: 23:12
+                      - generic [ref=e7940]: 24:52
+                      - generic [ref=e7942]: 26:27
+                      - generic [ref=e7944]: 28:01
+                      - generic [ref=e7946]: 29:38
+                      - generic [ref=e7948]: 31:12
+                      - generic [ref=e7950]: 32:41
+                      - generic [ref=e7952]: 34:11
+                      - generic [ref=e7954]: 35:47
+                      - generic [ref=e7956]: 37:22
+                    - generic [ref=e7957]:
+                      - generic [ref=e7959]: "0"
+                      - generic [ref=e7961]: "30"
+                      - generic [ref=e7963]: "60"
+                      - generic [ref=e7965]: "90"
+                      - generic [ref=e7967]: "120"
+                    - generic [ref=e7968]:
+                      - generic [ref=e7970]: "0"
+                      - generic [ref=e7972]: "3000"
+                      - generic [ref=e7974]: "6000"
+                      - generic [ref=e7976]: "9000"
+                      - generic [ref=e7978]: "12000"
+            - generic [ref=e7979]:
+              - generic [ref=e7982]:
+                - button "Zoom in" [ref=e7983] [cursor=pointer]: +
+                - button "Zoom out" [ref=e7984] [cursor=pointer]: −
+              - generic:
+                - generic: "Range points: 8273"
+                - generic: •
+                - generic: "Route points: 8273"
+                - generic: •
+                - generic: Click map to pin nearest point
+          - generic [ref=e7985]:
+            - generic [ref=e7986]:
+              - generic [ref=e7988]:
+                - generic [ref=e7989]:
+                  - img [ref=e7990]
+                  - text: Raptor AI
+                - paragraph [ref=e7994]:
+                  - text: Select a range of data on the chart using the
+                  - strong [ref=e7995]: brush slider
+                  - text: ", then ask me anything about your performance in that specific section!"
+              - paragraph [ref=e7999]: Give me 5 precise improvement points and include exact +HH:MM:SS times for each point.
+              - generic [ref=e8001]:
+                - generic [ref=e8002]:
+                  - img [ref=e8003]
+                  - text: Raptor AI
+                - generic [ref=e8006]:
+                  - paragraph [ref=e8007]: "Alright, let's dive into this data slice from your Raptor telemetry system. I've analyzed the inputs carefully, and here are 5 precise improvement points with their exact timestamps:"
+                  - list [ref=e8008]:
+                    - listitem [ref=e8009]:
+                      - paragraph [ref=e8010]:
+                        - strong [ref=e8011]: "Delayed Upshift from 1st Gear:"
+                        - text: At
+                        - strong [ref=e8012]:
+                          - button "+00:00:02" [ref=e8013] [cursor=pointer]
+                          - text: (2.516s)
+                        - text: ", the data shows a brief drop to 1st gear at 6272 RPM, then continued acceleration in 1st gear, reaching up to 7040 RPM at 33.336 kph by"
+                        - strong [ref=e8014]:
+                          - button "+00:00:03" [ref=e8015] [cursor=pointer]
+                          - text: (3.283s)
+                        - text: ", before finally engaging 2nd gear at"
+                        - strong [ref=e8016]:
+                          - button "+00:00:03" [ref=e8017] [cursor=pointer]
+                          - text: (3.633s)
+                        - text: . This prolonged high-RPM run in 1st gear indicates either an unnecessary downshift, a false neutral that resolved into 1st, or a significant delay in upshifting, leading to sub-optimal power delivery and unnecessary engine stress for the speed achieved.
+                    - listitem [ref=e8018]:
+                      - paragraph [ref=e8019]:
+                        - strong [ref=e8020]: "Hesitant Mid-Corner Throttle Application:"
+                        - text: Between
+                        - strong [ref=e8021]:
+                          - button "+00:00:04" [ref=e8022] [cursor=pointer]
+                          - text: (4.552s)
+                        - text: and
+                        - strong [ref=e8023]:
+                          - button "+00:00:06" [ref=e8024] [cursor=pointer]
+                          - text: (6.104s)
+                        - text: ", while maintaining a speed around 41 kph in 2nd gear, your throttle input consistently hovers around 7-10%. This extended period of minimal throttle suggests you might be coasting or being overly cautious. There's likely an opportunity here to apply throttle more progressively and earlier to maintain higher corner speed and carry more momentum onto the next section."
+                    - listitem [ref=e8025]:
+                      - paragraph [ref=e8026]:
+                        - strong [ref=e8027]: "Late Downshift Under Braking:"
+                        - text: At
+                        - strong [ref=e8028]:
+                          - button "+00:00:28" [ref=e8029] [cursor=pointer]
+                          - text: (28.637s)
+                        - text: ", while decelerating from approximately 53 kph, you're in 3rd gear with a high 7036 RPM. The data shows a downshift to 2nd gear occurring by"
+                        - strong [ref=e8030]:
+                          - button "+00:00:29" [ref=e8031] [cursor=pointer]
+                          - text: (29.339s)
+                        - text: . Initiating this downshift slightly earlier in the braking zone could allow for better engine braking, more stable chassis performance, and a smoother transition to drive as you prepare for corner entry.
+                    - listitem [ref=e8032]:
+                      - paragraph [ref=e8033]:
+                        - strong [ref=e8034]: "Engine Bogging on Slow Corner Exit:"
+                        - text: From
+                        - strong [ref=e8035]:
+                          - button "+00:00:30" [ref=e8036] [cursor=pointer]
+                          - text: (30.625s)
+                        - text: to
+                        - strong [ref=e8037]:
+                          - button "+00:00:31" [ref=e8038] [cursor=pointer]
+                          - text: (31.405s)
+                        - text: ", at a speed around 24.9 kph in 2nd gear, the engine RPM drops significantly from 4501 to 3731 with very low throttle (7.45%). This indicates the engine is bogging down outside its optimal power band. A more decisive downshift to 1st gear or an earlier, more assertive throttle application at"
+                        - strong [ref=e8039]:
+                          - button "+00:00:30" [ref=e8040] [cursor=pointer]
+                          - text: (30.625s)
+                        - text: would greatly improve your drive out of this slow section.
+                    - listitem [ref=e8041]:
+                      - paragraph [ref=e8042]:
+                        - strong [ref=e8043]: "Over-Revving in 3rd Gear at High Speed:"
+                        - text: At
+                        - strong [ref=e8044]:
+                          - button "+00:01:47" [ref=e8045] [cursor=pointer]
+                          - text: (107.884s)
+                        - text: ", you are in 3rd gear at 75.275 kph, operating at a very high 10149 RPM with strong throttle (83.52%). An upshift to 4th gear slightly earlier in this acceleration phase (e.g., as you approach 70-75 kph) would allow the engine to operate more efficiently within its torque curve, reduce engine stress, and potentially maintain acceleration more effectively over a longer duration."
+            - generic [ref=e8046]:
+              - generic [ref=e8047]:
+                - generic [ref=e8048]:
+                  - generic [ref=e8049]: Tools used & progress
+                  - button "Collapse" [ref=e8050] [cursor=pointer]
+                - generic [ref=e8051]:
+                  - generic [ref=e8052]: Telemetry Window Selector
+                  - generic [ref=e8053]: Signal Normalizer
+                  - generic [ref=e8054]: Ride Signal Analyzer
+                  - generic [ref=e8055]: AI Insight Generator
+                - generic [ref=e8056]:
+                  - generic [ref=e8057]:
+                    - generic [ref=e8058]: "1"
+                    - generic [ref=e8059]: Selected telemetry range from your brush window
+                    - generic [ref=e8060]: 09:01:01 PM
+                  - generic [ref=e8061]:
+                    - generic [ref=e8062]: "2"
+                    - generic [ref=e8063]: Validated and normalized telemetry signals
+                    - generic [ref=e8064]: 09:01:01 PM
+                  - generic [ref=e8065]:
+                    - generic [ref=e8066]: "3"
+                    - generic [ref=e8067]: Prepared speed, RPM, throttle, and gear context
+                    - generic [ref=e8068]: 09:01:02 PM
+                  - generic [ref=e8069]:
+                    - generic [ref=e8070]: "4"
+                    - generic [ref=e8071]: Generated coaching response with AI model
+                    - generic [ref=e8072]: 09:01:02 PM
+              - generic [ref=e8073]:
+                - textbox "Ask about this data range..." [ref=e8074]
+                - button [ref=e8075] [cursor=pointer]:
+                  - img [ref=e8076]
+  - generic [ref=e7312]: "3000"
