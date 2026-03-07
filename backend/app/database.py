@@ -23,6 +23,14 @@ else:
     # For relative paths like ./rides.db
     SQLALCHEMY_DATABASE_URL = f"sqlite:///{db_file_path}"
 
+# Ensure the directory exists before SQLAlchemy tries to create the file
+db_dir = os.path.dirname(db_file_path)
+if db_dir and not os.path.exists(db_dir):
+    try:
+        os.makedirs(db_dir, exist_ok=True)
+    except Exception as e:
+        print(f"Warning: Could not create directory {db_dir}: {e}")
+
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
 )
