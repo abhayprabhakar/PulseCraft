@@ -1173,8 +1173,8 @@ function TimeSeriesTab({ rideId }: { rideId: string }) {
                                             }}
                                             labelStyle={{ color: 'var(--text-secondary)', fontSize: 11, marginBottom: 4 }}
                                             itemStyle={{ fontSize: 12 }}
-                                            formatter={(value: any, name?: string) => {
-                                                const seriesName = name ?? 'Value';
+                                            formatter={(value: any, name?: string | number) => {
+                                                const seriesName = String(name ?? 'Value');
                                                 if (seriesName.includes('Speed')) return [`${Number(value).toFixed(1)} km/h`, seriesName];
                                                 if (seriesName.includes('RPM')) return [Math.round(Number(value)).toString(), seriesName];
                                                 if (seriesName.includes('Gear')) return [Math.round(Number(value)).toString(), seriesName];

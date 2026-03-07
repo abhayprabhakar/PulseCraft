@@ -25,9 +25,10 @@ const GearUsageChart: React.FC<Props> = ({ data }) => {
                     <YAxis label={{ value: 'Time (s)', angle: -90, position: 'insideLeft', fill: '#888' }} stroke="#888" />
                     <Tooltip
                         contentStyle={{ backgroundColor: '#222', borderColor: '#444' }}
-                        formatter={(value: any, name?: string) => {
-                            if (name === 'time_seconds') return [`${Number(value).toFixed(1)}s`, 'Time Selected'];
-                            return [value, name];
+                        formatter={(value: any, name?: string | number) => {
+                            const seriesName = String(name ?? 'Value');
+                            if (seriesName === 'time_seconds') return [`${Number(value).toFixed(1)}s`, 'Time Selected'];
+                            return [value, seriesName];
                         }}
                         labelFormatter={(label) => `Gear ${label}`}
                     />
