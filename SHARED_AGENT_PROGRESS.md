@@ -451,3 +451,13 @@ Event clicks in Analysis timeline now map to the correct location instead of rep
 	- Removed the `Lat` and `Lng` columns and fixed the `zIndex` to prevent values from scrolling visibly above the header.
 	Validation: Header background matches the card background and values properly scroll behind the header.
 	Files: raptor-frontend/src/components/analytics/EventTimeline.tsx.
+- 2026-03-08: Mobile App UI/UX and Ride Summary enhancements:
+        - Updated Settings child pages to use a sleek scrollable inline title rather than a sticky frosted glass AppBar.
+        - Converted the 'Manage Favorites' dialog in settings and 'Ride Options' menu in the trip detail screen to match the modern App glassmorphic UI.
+        - Added map tracks to the ride summary page for each ride chip using lutter_map with dynamic coordinate loading.
+        - Redesigned the Ride Summary cards (_RideCard) to a premium aesthetic featuring soft vignette gradients, glassmorphic pills, clean typography, and seamless map integration.
+        - Added a grid/list tile view toggle in RideSummaryScreen allowing users to switch between the new large premium map tile view and a sleek compact list view.
+        - Handled dependency tracking and fixed lutter_map deprecated parameters (isDotted) and strict polyline typing.
+        Validation: Dart analyzer clean for 
+ide_summary_screen.dart and UI visually validated.
+        Files: pulsecraft-bike/mobile_app/pulsecraft_app/lib/features/settings/settings_screen.dart, pulsecraft-bike/mobile_app/pulsecraft_app/lib/features/ride_summary/trip_detail_screen.dart, pulsecraft-bike/mobile_app/pulsecraft_app/lib/features/ride_summary/ride_summary_screen.dart.
