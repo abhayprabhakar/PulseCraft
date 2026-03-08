@@ -48,7 +48,8 @@ def _ensure_user_schema_columns() -> None:
         if not inspector.has_table("users"):
             return
 
-        columns = [col['name'] for col in inspector.get_columns("users")]
+        columns = {col['name'] for col in inspector.get_columns("users")}
+        ts_type = "TIMESTAMP" if engine.dialect.name.startswith("postgres") else "DATETIME"
 
         alter_statements = {
             'username': "ALTER TABLE users ADD COLUMN username VARCHAR",
@@ -56,14 +57,25 @@ def _ensure_user_schema_columns() -> None:
             'last_known_lat': "ALTER TABLE users ADD COLUMN last_known_lat FLOAT",
             'last_known_lng': "ALTER TABLE users ADD COLUMN last_known_lng FLOAT",
             'last_location_label': "ALTER TABLE users ADD COLUMN last_location_label VARCHAR",
-            'last_location_updated_at': "ALTER TABLE users ADD COLUMN last_location_updated_at DATETIME",
+            'last_location_updated_at': f"ALTER TABLE users ADD COLUMN last_location_updated_at {ts_type}",
         }
 
-        with engine.begin() as conn:
-            for col_name, statement in alter_statements.items():
-                if col_name not in columns:
+        # Apply one statement at a time so a single column failure does not block others.
+        for col_name, statement in alter_statements.items():
+            if col_name in columns:
+                continue
+            try:
+                with engine.begin() as conn:
                     conn.execute(text(statement))
+                columns.add(col_name)
+            except Exception as col_exc:
+                print(f"User schema migration skipped for '{col_name}': {col_exc}")
 
+        # Backfill usernames only when the column is available.
+        if 'username' not in columns:
+            return
+
+        with engine.begin() as conn:
             users = conn.execute(text("SELECT id, email, full_name, username FROM users ORDER BY id ASC")).fetchall()
             used_usernames = set()
 
