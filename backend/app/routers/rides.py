@@ -1957,16 +1957,21 @@ def _can_user_view_ride(db: Session, ride: Ride, user: Optional[User]) -> bool:
     return False
 
 
-def _share_base_url() -> str:
-    return os.getenv("RIDE_SHARE_BASE_URL", "http://localhost:8008/api/v1/rides/shared/link")
+def _share_base_url(request: Optional[Request] = None) -> str:
+    configured = (os.getenv("RIDE_SHARE_BASE_URL") or "").strip()
+    if configured:
+        return configured
+    if request is not None:
+        return f"{str(request.base_url).rstrip('/')}/api/v1/rides/shared/link"
+    return "http://localhost:8008/api/v1/rides/shared/link"
 
 
 def _app_deep_link_base() -> str:
     return os.getenv("PULSECRAFT_APP_DEEP_LINK_BASE", "pulsecraft://shared/link")
 
 
-def _to_share_link_out(link: models.RideShareLink) -> RideShareLinkOut:
-    base_url = _share_base_url().rstrip("/")
+def _to_share_link_out(link: models.RideShareLink, request: Optional[Request] = None) -> RideShareLinkOut:
+    base_url = _share_base_url(request=request).rstrip("/")
     return RideShareLinkOut(
         id=link.id,
         ride_id=link.ride_id,
@@ -2646,6 +2651,7 @@ def update_ride_visibility(
 def create_ride_share_link(
     ride_id: str,
     payload: RideShareLinkCreate,
+    request: Request,
     db: Session = Depends(database.get_db),
     current_user: User = Depends(auth.get_current_user),
 ):
@@ -2673,12 +2679,13 @@ def create_ride_share_link(
 
     db.commit()
     db.refresh(link)
-    return _to_share_link_out(link)
+    return _to_share_link_out(link, request=request)
 
 
 @router.get("/{ride_id}/share-links", response_model=List[RideShareLinkOut])
 def list_ride_share_links(
     ride_id: str,
+    request: Request,
     db: Session = Depends(database.get_db),
     current_user: User = Depends(auth.get_current_user),
 ):
@@ -2694,7 +2701,7 @@ def list_ride_share_links(
         .order_by(models.RideShareLink.created_at.desc())
         .all()
     )
-    return [_to_share_link_out(link) for link in links]
+    return [_to_share_link_out(link, request=request) for link in links]
 
 
 @router.delete("/{ride_id}/share-links/{link_id}", status_code=status.HTTP_204_NO_CONTENT)
