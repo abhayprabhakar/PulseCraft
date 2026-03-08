@@ -4,7 +4,7 @@ import re
 import math
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 from sqlalchemy.orm import Session
 
 from .. import auth, database, models, schemas
@@ -640,7 +640,11 @@ def send_friend_request(
 
     target_user = None
     if target_username:
-        target_user = db.query(models.User).filter(models.User.username == target_username).first()
+        target_user = (
+            db.query(models.User)
+            .filter(func.lower(models.User.username) == target_username)
+            .first()
+        )
     elif target_email:
         # Backward compatible fallback
         target_user = db.query(models.User).filter(models.User.email == target_email).first()
