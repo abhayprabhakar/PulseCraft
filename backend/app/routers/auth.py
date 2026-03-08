@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 from datetime import datetime, timedelta
 import re
 from .. import models, schemas, auth, database
@@ -112,8 +112,8 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
     credential = (form_data.username or "").strip().lower()
     user = db.query(models.User).filter(
         or_(
-            models.User.email == credential,
-            models.User.username == credential,
+            func.lower(models.User.email) == credential,
+            func.lower(models.User.username) == credential,
         )
     ).first()
     if not user or not auth.verify_password(form_data.password, user.hashed_password):
@@ -162,6 +162,94 @@ def update_user_me(user_update: schemas.UserUpdate, db: Session = Depends(databa
     db.commit()
     db.refresh(current_user)
     return current_user
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+def delete_user_me(
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    user_id = current_user.id
+
+    bike_ids = [
+        bike_id
+        for (bike_id,) in db.query(models.Bike.id)
+        .filter(models.Bike.owner_id == user_id)
+        .all()
+    ]
+    ride_ids = [
+        ride_id
+        for (ride_id,) in db.query(models.Ride.id)
+        .filter(models.Ride.owner_id == user_id)
+        .all()
+    ]
+    upload_session_ids = [
+        session_id
+        for (session_id,) in db.query(models.RideUploadSession.id)
+        .filter(models.RideUploadSession.owner_id == user_id)
+        .all()
+    ]
+
+    try:
+        if ride_ids:
+            db.query(models.RideShareLink).filter(
+                models.RideShareLink.ride_id.in_(ride_ids)
+            ).delete(synchronize_session=False)
+
+        db.query(models.RideShareLink).filter(
+            models.RideShareLink.created_by_id == user_id
+        ).delete(synchronize_session=False)
+
+        if upload_session_ids:
+            db.query(models.RideUploadChunk).filter(
+                models.RideUploadChunk.session_id.in_(upload_session_ids)
+            ).delete(synchronize_session=False)
+
+        db.query(models.RideUploadSession).filter(
+            models.RideUploadSession.owner_id == user_id
+        ).delete(synchronize_session=False)
+
+        db.query(models.Favorite).filter(
+            models.Favorite.user_id == user_id
+        ).delete(synchronize_session=False)
+
+        db.query(models.FriendRequest).filter(
+            or_(
+                models.FriendRequest.requester_id == user_id,
+                models.FriendRequest.receiver_id == user_id,
+            )
+        ).delete(synchronize_session=False)
+
+        db.query(models.Friendship).filter(
+            or_(
+                models.Friendship.user_id == user_id,
+                models.Friendship.friend_id == user_id,
+            )
+        ).delete(synchronize_session=False)
+
+        if bike_ids:
+            db.query(models.BikeDocument).filter(
+                models.BikeDocument.bike_id.in_(bike_ids)
+            ).delete(synchronize_session=False)
+
+        db.query(models.Ride).filter(models.Ride.owner_id == user_id).delete(
+            synchronize_session=False
+        )
+        db.query(models.Bike).filter(models.Bike.owner_id == user_id).delete(
+            synchronize_session=False
+        )
+        db.query(models.UploadedFile).filter(
+            models.UploadedFile.owner_id == user_id
+        ).delete(synchronize_session=False)
+
+        db.delete(current_user)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not delete account",
+        )
 
 
 @router.put("/me/location", response_model=schemas.User)
