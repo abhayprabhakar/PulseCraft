@@ -235,10 +235,23 @@ def get_user_stats(
             if fav_bike:
                 favorite_bike_name = fav_bike.name
 
+    following_count = (
+        db.query(models.Friendship)
+        .filter(models.Friendship.user_id == current_user.id)
+        .count()
+    )
+    followers_count = (
+        db.query(models.Friendship)
+        .filter(models.Friendship.friend_id == current_user.id)
+        .count()
+    )
+
     return {
         "total_rides": total_rides,
         "total_distance_km": round(total_distance, 2),
         "max_speed_kph": round(max_speed_all_time, 1),
         "total_hours": round(total_duration_seconds / 3600, 1),
-        "favorite_bike": favorite_bike_name
+        "favorite_bike": favorite_bike_name,
+        "following_count": following_count,
+        "followers_count": followers_count,
     }
