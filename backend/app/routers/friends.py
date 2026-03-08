@@ -319,8 +319,12 @@ def discover_users(
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
-    normalized_query = query.strip().lower()
-    blocked_ids = _excluded_user_ids_for_recommendations(db, current_user)
+    normalized_query = query.strip().lower().lstrip("@").strip()
+    if len(normalized_query) < 2:
+        return []
+
+    # Discovery should show all other riders; only hide the current user.
+    blocked_ids = {current_user.id}
 
     users = (
         db.query(models.User)
@@ -329,6 +333,7 @@ def discover_users(
             or_(
                 models.User.username.ilike(f"%{normalized_query}%"),
                 models.User.full_name.ilike(f"%{normalized_query}%"),
+                models.User.email.ilike(f"%{normalized_query}%"),
             ),
         )
         .order_by(models.User.created_at.desc())
