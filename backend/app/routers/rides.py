@@ -2024,12 +2024,44 @@ def _format_duration_seconds(total_seconds: Optional[int]) -> str:
         return f"{secs}s"
 
 
+def _extract_share_map_points(telemetry_blob: Any, max_points: int = 280) -> List[List[float]]:
+    if not isinstance(telemetry_blob, list):
+        return []
+
+    raw_points: List[List[float]] = []
+    for frame in telemetry_blob:
+        if not isinstance(frame, dict):
+            continue
+
+        try:
+            lat = float(frame.get("lat"))
+            lng = float(frame.get("lng"))
+        except Exception:
+            continue
+
+        if not np.isfinite(lat) or not np.isfinite(lng):
+            continue
+        if abs(lat) > 90 or abs(lng) > 180:
+            continue
+
+        raw_points.append([round(lat, 6), round(lng, 6)])
+
+    if len(raw_points) <= max_points:
+        return raw_points
+
+    sampled_indexes = np.linspace(0, len(raw_points) - 1, num=max_points, dtype=int).tolist()
+    sampled_points = [raw_points[index] for index in sampled_indexes]
+    return sampled_points
+
+
 def _render_shared_ride_page(token: str, ride: Ride, request: Request) -> str:
         owner = getattr(ride, "owner_name", None) or "PulseCraft rider"
         title = ride.title or "Shared Ride"
         started_at_text = (ride.started_at or datetime.utcnow()).strftime("%d %b %Y, %I:%M %p")
         deep_link = f"{_app_deep_link_base().rstrip('/')}/{token}"
         web_json_url = f"{request.base_url}api/v1/rides/shared/link/{token}?format=json"
+        map_points = _extract_share_map_points(getattr(ride, "telemetry_blob", None))
+        map_points_json = json.dumps(map_points)
 
         return f"""<!doctype html>
 <html lang=\"en\">
@@ -2038,6 +2070,7 @@ def _render_shared_ride_page(token: str, ride: Ride, request: Request) -> str:
     <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
     <title>{escape(title)} - PulseCraft</title>
     <meta name=\"description\" content=\"{escape(owner)} shared a ride with you on PulseCraft.\" />
+    <link rel=\"stylesheet\" href=\"https://unpkg.com/leaflet@1.9.4/dist/leaflet.css\" />
     <style>
         :root {{
             --bg0: #070a12;
@@ -2101,6 +2134,37 @@ def _render_shared_ride_page(token: str, ride: Ride, request: Request) -> str:
         }}
         .stat .label {{ font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; }}
         .stat .value {{ margin-top: 6px; font-size: 20px; font-weight: 700; color: var(--text); }}
+        .map-wrap {{
+            margin-top: 16px;
+            border-radius: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            overflow: hidden;
+            background: rgba(10, 14, 26, 0.42);
+        }}
+        .map-head {{
+            padding: 10px 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+        }}
+        .map-head h2 {{
+            margin: 0;
+            font-size: 13px;
+            letter-spacing: .06em;
+            text-transform: uppercase;
+            color: var(--muted);
+        }}
+        #ride-map {{
+            width: 100%;
+            height: 260px;
+        }}
+        .map-fallback {{
+            height: 260px;
+            display: grid;
+            place-items: center;
+            color: var(--muted);
+            font-size: 14px;
+            padding: 0 18px;
+            text-align: center;
+        }}
         .actions {{ display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }}
         .btn {{
             appearance: none;
@@ -2136,6 +2200,11 @@ def _render_shared_ride_page(token: str, ride: Ride, request: Request) -> str:
             <article class=\"stat\"><div class=\"label\">Duration</div><div class=\"value\">{escape(_format_duration_seconds(ride.duration_seconds))}</div></article>
         </section>
 
+        <section class=\"map-wrap\">
+            <div class=\"map-head\"><h2>Route Map</h2></div>
+            <div id=\"ride-map\"></div>
+        </section>
+
         <div class=\"actions\">
             <a class=\"btn btn-primary\" id=\"open-app\" href=\"{escape(deep_link)}\">Open In App</a>
             <a class=\"btn btn-secondary\" href=\"{escape(web_json_url)}\">View Raw Link API</a>
@@ -2144,9 +2213,35 @@ def _render_shared_ride_page(token: str, ride: Ride, request: Request) -> str:
         <p class=\"foot\">If the app is not installed, stay on this page to view summary details.</p>
     </main>
 
+    <script src=\"https://unpkg.com/leaflet@1.9.4/dist/leaflet.js\"></script>
     <script>
         (function() {{
             var deepLink = {json.dumps(deep_link)};
+            var mapPoints = {map_points_json};
+            var mapEl = document.getElementById("ride-map");
+
+            function renderMapFallback(message) {{
+                if (!mapEl) return;
+                mapEl.innerHTML = '<div class="map-fallback">' + message + '</div>';
+            }}
+
+            if (Array.isArray(mapPoints) && mapPoints.length > 1 && window.L && mapEl) {{
+                var map = L.map(mapEl, {{ zoomControl: true }});
+                L.tileLayer("https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png", {{
+                    maxZoom: 19,
+                    attribution: '&copy; OpenStreetMap contributors'
+                }}).addTo(map);
+
+                var route = L.polyline(mapPoints, {{ color: '#9db7ff', weight: 4, opacity: 0.9 }}).addTo(map);
+                var start = mapPoints[0];
+                var end = mapPoints[mapPoints.length - 1];
+                L.circleMarker(start, {{ radius: 5, color: '#17d3e3', fillColor: '#17d3e3', fillOpacity: 1 }}).addTo(map);
+                L.circleMarker(end, {{ radius: 5, color: '#ffffff', fillColor: '#ffffff', fillOpacity: 1 }}).addTo(map);
+                map.fitBounds(route.getBounds(), {{ padding: [20, 20] }});
+            }} else {{
+                renderMapFallback('Route map is unavailable for this shared ride.');
+            }}
+
             var ua = navigator.userAgent || "";
             var isMobile = /Android|iPhone|iPad|iPod/i.test(ua);
             if (!isMobile) return;
