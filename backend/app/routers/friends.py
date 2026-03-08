@@ -199,6 +199,30 @@ def _build_suggested_for_you(
     return recommendations
 
 
+def _to_ride_summary(ride: models.Ride) -> schemas.RideSummary:
+    started_at = ride.started_at or datetime.utcnow()
+    owner_name = None
+    if ride.owner is not None:
+        owner_name = ride.owner.full_name or _username_for(ride.owner)
+    return schemas.RideSummary(
+        id=ride.id,
+        title=ride.title or "Untitled Ride",
+        started_at=started_at,
+        duration_seconds=ride.duration_seconds or 0,
+        max_speed=ride.max_speed or 0.0,
+        avg_speed=ride.avg_speed or 0.0,
+        max_lean_left=ride.max_lean_left or 0.0,
+        max_lean_right=ride.max_lean_right or 0.0,
+        max_rpm=ride.max_rpm or 0,
+        total_distance_km=ride.total_distance_km or 0.0,
+        bike_id=ride.bike_id,
+        laps=ride.laps or [],
+        visibility=ride.visibility or "private",
+        owner_id=ride.owner_id,
+        owner_name=owner_name,
+    )
+
+
 @router.get("/", response_model=List[schemas.FriendUserSummary])
 def list_friends(
     db: Session = Depends(database.get_db),
@@ -292,6 +316,99 @@ def suggested_friends(
     current_user: models.User = Depends(auth.get_current_user),
 ):
     return _build_suggested_for_you(db, current_user, limit)
+
+
+@router.get("/profiles/{username}", response_model=schemas.FriendProfileResponse)
+def get_friend_profile(
+    username: str,
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    normalized_username = _normalize_username(username)
+    if not normalized_username:
+        raise HTTPException(status_code=400, detail="username is required")
+
+    target_user = (
+        db.query(models.User)
+        .filter(models.User.username == normalized_username)
+        .first()
+    )
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    is_self = target_user.id == current_user.id
+    is_following = is_self or _are_friends(db, current_user.id, target_user.id)
+    is_follower = is_self or _are_friends(db, target_user.id, current_user.id)
+    can_view_rides = is_following or is_self
+
+    following_count = (
+        db.query(models.Friendship)
+        .filter(models.Friendship.user_id == target_user.id)
+        .count()
+    )
+    followers_count = (
+        db.query(models.Friendship)
+        .filter(models.Friendship.friend_id == target_user.id)
+        .count()
+    )
+    shared_rides_count = (
+        db.query(models.Ride)
+        .filter(
+            models.Ride.owner_id == target_user.id,
+            models.Ride.visibility.in_(["friends", "public"]),
+        )
+        .count()
+    )
+
+    mutual_count = 0
+    if not is_self:
+        mutual_count = len(_friend_ids(db, current_user.id).intersection(_friend_ids(db, target_user.id)))
+
+    return schemas.FriendProfileResponse(
+        user=_to_user_summary(target_user, mutual_count),
+        stats=schemas.FriendProfileStats(
+            following_count=following_count,
+            followers_count=followers_count,
+            shared_rides_count=shared_rides_count,
+        ),
+        is_following=is_following,
+        is_follower=is_follower,
+        can_view_rides=can_view_rides,
+    )
+
+
+@router.get("/profiles/{username}/rides", response_model=List[schemas.RideSummary])
+def get_friend_profile_rides(
+    username: str,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=60),
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    normalized_username = _normalize_username(username)
+    if not normalized_username:
+        raise HTTPException(status_code=400, detail="username is required")
+
+    target_user = (
+        db.query(models.User)
+        .filter(models.User.username == normalized_username)
+        .first()
+    )
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    is_self = target_user.id == current_user.id
+    is_following = _are_friends(db, current_user.id, target_user.id)
+    can_view_rides = is_self or is_following
+    if not can_view_rides:
+        return []
+
+    query = db.query(models.Ride).filter(models.Ride.owner_id == target_user.id)
+    if not is_self:
+        query = query.filter(models.Ride.visibility.in_(["friends", "public"]))
+
+    rides = query.order_by(models.Ride.started_at.desc()).offset(skip).limit(limit).all()
+    return [_to_ride_summary(ride) for ride in rides]
 
 
 @router.post("/recommendations/contacts", response_model=schemas.FriendContactRecommendationResponse)

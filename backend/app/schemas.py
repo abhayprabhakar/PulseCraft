@@ -191,6 +191,20 @@ class FriendContactRecommendationResponse(BaseModel):
     suggested_for_you: List[FriendRecommendation]
 
 
+class FriendProfileStats(BaseModel):
+    following_count: int = 0
+    followers_count: int = 0
+    shared_rides_count: int = 0
+
+
+class FriendProfileResponse(BaseModel):
+    user: FriendUserSummary
+    stats: FriendProfileStats
+    is_following: bool = False
+    is_follower: bool = False
+    can_view_rides: bool = False
+
+
 class ChatHistoryTurn(BaseModel):
     role: str
     content: str
@@ -267,6 +281,13 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     email: Optional[str] = None
+
+
+class UsernameAvailability(BaseModel):
+    username: str
+    normalized_username: str
+    available: bool
+    message: Optional[str] = None
 
 class FavoriteBase(BaseModel):
     name: str

@@ -39,6 +39,34 @@ def _ensure_unique_username(db: Session, base: str) -> str:
         suffix += 1
     return candidate
 
+
+@router.get("/username-availability", response_model=schemas.UsernameAvailability)
+def check_username_availability(username: str, db: Session = Depends(database.get_db)):
+    normalized_username = _normalize_username(username)
+    if len(normalized_username) < 3:
+        return {
+            "username": username,
+            "normalized_username": normalized_username,
+            "available": False,
+            "message": "Username must be at least 3 characters",
+        }
+
+    username_exists = db.query(models.User).filter(models.User.username == normalized_username).first()
+    if username_exists:
+        return {
+            "username": username,
+            "normalized_username": normalized_username,
+            "available": False,
+            "message": "Username already taken",
+        }
+
+    return {
+        "username": username,
+        "normalized_username": normalized_username,
+        "available": True,
+        "message": "Username is available",
+    }
+
 @router.post("/register", response_model=schemas.User)
 def create_user(user: schemas.UserCreate, db: Session = Depends(database.get_db)):
     db_user = db.query(models.User).filter(models.User.email == user.email).first()
