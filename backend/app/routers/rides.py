@@ -3011,7 +3011,8 @@ def delete_ride(ride_id: str, db: Session = Depends(database.get_db), current_us
 
 from pydantic import BaseModel
 class RideUpdateSchema(BaseModel):
-    title: str
+    title: Optional[str] = None
+    bike_id: Optional[int] = None
 
 @router.put("/{ride_id}", response_model=RideSummary)
 def update_ride(ride_id: str, update_data: RideUpdateSchema, db: Session = Depends(database.get_db), current_user: User = Depends(auth.get_current_user)):
@@ -3021,8 +3022,30 @@ def update_ride(ride_id: str, update_data: RideUpdateSchema, db: Session = Depen
     
     if ride.owner_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to update this ride")
-    
-    ride.title = update_data.title
+
+    update_fields = update_data.dict(exclude_unset=True)
+    if not update_fields:
+        raise HTTPException(status_code=400, detail="No fields provided for update")
+
+    if "title" in update_fields:
+        title_value = (update_fields.get("title") or "").strip()
+        if not title_value:
+            raise HTTPException(status_code=400, detail="Title cannot be empty")
+        ride.title = title_value
+
+    if "bike_id" in update_fields:
+        bike_id = update_fields.get("bike_id")
+        if bike_id is None:
+            ride.bike_id = None
+        else:
+            bike = db.query(models.Bike).filter(
+                models.Bike.id == bike_id,
+                models.Bike.owner_id == current_user.id,
+            ).first()
+            if not bike:
+                raise HTTPException(status_code=404, detail="Bike not found")
+            ride.bike_id = bike.id
+
     db.commit()
     db.refresh(ride)
     return ride

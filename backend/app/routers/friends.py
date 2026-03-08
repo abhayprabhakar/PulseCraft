@@ -25,6 +25,40 @@ def _normalize_phone(raw: Optional[str]) -> Optional[str]:
     return digits or None
 
 
+def _normalize_name_for_match(raw: Optional[str]) -> str:
+    cleaned = re.sub(r"[^a-zA-Z0-9\s]", " ", (raw or "").strip().lower())
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
+def _name_match_score(contact_name: str, username: str, full_name: str) -> int:
+    if not contact_name:
+        return 0
+
+    haystacks = [username, full_name]
+    best_score = 0
+
+    if len(contact_name) >= 4:
+        for haystack in haystacks:
+            if contact_name in haystack:
+                best_score = max(best_score, 25 + len(contact_name))
+
+    tokens = [token for token in contact_name.split(" ") if len(token) >= 3]
+    if not tokens:
+        return best_score
+
+    overlap_count = 0
+    longest_token = 0
+    for token in tokens:
+        if any(token in haystack for haystack in haystacks):
+            overlap_count += 1
+            longest_token = max(longest_token, len(token))
+
+    if overlap_count >= 2 or (overlap_count == 1 and len(contact_name) >= 6):
+        best_score = max(best_score, overlap_count * 10 + longest_token)
+
+    return best_score
+
+
 def _friend_ids(db: Session, user_id: int) -> Set[int]:
     return {
         row.friend_id
@@ -421,10 +455,16 @@ def recommended_from_contacts(
     excluded_ids = _excluded_user_ids_for_recommendations(db, current_user)
 
     phone_to_name: Dict[str, str] = {}
+    contact_name_signatures: Dict[str, str] = {}
     emails: Set[str] = set()
     usernames: Set[str] = set()
 
     for contact in payload.contacts or []:
+        display_name = (contact.name or "").strip()
+        normalized_name = _normalize_name_for_match(display_name)
+        if normalized_name and len(normalized_name) >= 4:
+            contact_name_signatures.setdefault(normalized_name, display_name)
+
         phone = _normalize_phone(contact.phone_number)
         if phone:
             phone_to_name[phone] = (contact.name or "").strip()
@@ -486,7 +526,92 @@ def recommended_from_contacts(
             ),
             reverse=True,
         )
-        from_contacts = from_contacts[:limit]
+
+    # Name-based matching fallback: map contact display names to username/full_name.
+    if contact_name_signatures and len(from_contacts) < limit:
+        candidate_excluded_ids = set(excluded_ids)
+        candidate_excluded_ids.update(matched_ids)
+
+        token_candidates = {
+            token
+            for signature in contact_name_signatures.keys()
+            for token in signature.split(" ")
+            if len(token) >= 4
+        }
+        token_list = sorted(token_candidates, key=len, reverse=True)[:30]
+
+        if token_list:
+            name_conditions = []
+            for token in token_list:
+                name_conditions.append(models.User.username.ilike(f"%{token}%"))
+                name_conditions.append(models.User.full_name.ilike(f"%{token}%"))
+
+            name_candidates = (
+                db.query(models.User)
+                .filter(
+                    or_(*name_conditions),
+                    ~models.User.id.in_(list(candidate_excluded_ids)),
+                )
+                .limit(max(80, limit * 12))
+                .all()
+            )
+
+            scored_name_candidates: List[tuple[models.User, int, int, Optional[str]]] = []
+            for user in name_candidates:
+                normalized_username = _normalize_name_for_match(_username_for(user))
+                normalized_full_name = _normalize_name_for_match(user.full_name)
+
+                best_signature: Optional[str] = None
+                best_score = 0
+                for signature in contact_name_signatures.keys():
+                    score = _name_match_score(
+                        signature,
+                        normalized_username,
+                        normalized_full_name,
+                    )
+                    if score > best_score:
+                        best_score = score
+                        best_signature = signature
+
+                # Keep threshold conservative to reduce noisy matches.
+                if best_signature is None or best_score < 18:
+                    continue
+
+                mutual_count = len(my_friend_ids.intersection(_friend_ids(db, user.id)))
+                scored_name_candidates.append(
+                    (
+                        user,
+                        best_score,
+                        mutual_count,
+                        contact_name_signatures.get(best_signature),
+                    )
+                )
+
+            scored_name_candidates.sort(key=lambda item: (item[1], item[2]), reverse=True)
+
+            for user, _score, mutual_count, contact_name in scored_name_candidates:
+                if len(from_contacts) >= limit:
+                    break
+                if user.id in matched_ids:
+                    continue
+
+                from_contacts.append(
+                    schemas.FriendRecommendation(
+                        user=_to_user_summary(user, mutual_count),
+                        reason="Name matches a contact in your phonebook",
+                        from_contact_name=contact_name or None,
+                    )
+                )
+                matched_ids.add(user.id)
+
+    from_contacts.sort(
+        key=lambda item: (
+            item.user.mutual_friends_count or 0,
+            1 if item.from_contact_name else 0,
+        ),
+        reverse=True,
+    )
+    from_contacts = from_contacts[:limit]
 
     suggested_for_you = _build_suggested_for_you(
         db,
