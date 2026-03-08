@@ -30,12 +30,18 @@ class Ride(Base):
 
     title = Column(String, default="Untitled Ride")
     notes = Column(String, nullable=True)
+    visibility = Column(String, nullable=False, default="private", index=True)
 
     owner_id = Column(Integer, ForeignKey("users.id"))
     owner = relationship("User", back_populates="rides")
     
     bike_id = Column(Integer, ForeignKey("bikes.id"), nullable=True)
     bike = relationship("Bike", back_populates="rides")
+    share_links = relationship(
+        "RideShareLink",
+        back_populates="ride",
+        cascade="all, delete-orphan",
+    )
 
 
 class User(Base):
@@ -43,14 +49,43 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True)
+    username = Column(String, unique=True, index=True, nullable=True)
+    phone_number = Column(String, unique=True, index=True, nullable=True)
     hashed_password = Column(String)
     full_name = Column(String, nullable=True)
     profile_picture_url = Column(String, nullable=True)
+    last_known_lat = Column(Float, nullable=True)
+    last_known_lng = Column(Float, nullable=True)
+    last_location_label = Column(String, nullable=True)
+    last_location_updated_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     rides = relationship("Ride", back_populates="owner")
     favorites = relationship("Favorite", back_populates="owner")
     bikes = relationship("Bike", back_populates="owner")
+    sent_friend_requests = relationship(
+        "FriendRequest",
+        back_populates="requester",
+        foreign_keys="FriendRequest.requester_id",
+        cascade="all, delete-orphan",
+    )
+    received_friend_requests = relationship(
+        "FriendRequest",
+        back_populates="receiver",
+        foreign_keys="FriendRequest.receiver_id",
+        cascade="all, delete-orphan",
+    )
+    friends = relationship(
+        "Friendship",
+        back_populates="user",
+        foreign_keys="Friendship.user_id",
+        cascade="all, delete-orphan",
+    )
+    shared_ride_links = relationship(
+        "RideShareLink",
+        back_populates="created_by",
+        foreign_keys="RideShareLink.created_by_id",
+    )
 
 
 class Favorite(Base):
@@ -169,3 +204,52 @@ class RideUploadChunk(Base):
     __table_args__ = (
         UniqueConstraint("session_id", "chunk_index", name="uq_ride_upload_chunk_session_index"),
     )
+
+
+class FriendRequest(Base):
+    __tablename__ = "friend_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    requester_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    receiver_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    status = Column(String, nullable=False, default="pending", index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    responded_at = Column(DateTime, nullable=True)
+
+    requester = relationship("User", back_populates="sent_friend_requests", foreign_keys=[requester_id])
+    receiver = relationship("User", back_populates="received_friend_requests", foreign_keys=[receiver_id])
+
+    __table_args__ = (
+        UniqueConstraint("requester_id", "receiver_id", name="uq_friend_request_pair"),
+    )
+
+
+class Friendship(Base):
+    __tablename__ = "friendships"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    friend_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    user = relationship("User", back_populates="friends", foreign_keys=[user_id])
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "friend_id", name="uq_friendship_pair"),
+    )
+
+
+class RideShareLink(Base):
+    __tablename__ = "ride_share_links"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ride_id = Column(String, ForeignKey("rides.id"), nullable=False, index=True)
+    token = Column(String, nullable=False, unique=True, index=True)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=True)
+    revoked_at = Column(DateTime, nullable=True)
+    last_accessed_at = Column(DateTime, nullable=True)
+
+    ride = relationship("Ride", back_populates="share_links")
+    created_by = relationship("User", back_populates="shared_ride_links", foreign_keys=[created_by_id])

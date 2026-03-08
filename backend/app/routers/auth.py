@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-from datetime import timedelta
+from sqlalchemy import or_
+from datetime import datetime, timedelta
+import re
 from .. import models, schemas, auth, database
 
 router = APIRouter(
@@ -9,15 +11,66 @@ router = APIRouter(
     tags=["auth"]
 )
 
+
+def _normalize_username(raw: str) -> str:
+    candidate = re.sub(r"[^a-zA-Z0-9_.]", "", (raw or "").strip().lower())
+    return candidate.strip("._")
+
+
+def _derive_username_seed(email: str, full_name: str | None = None) -> str:
+    if full_name:
+        seed = _normalize_username(full_name.replace(" ", "_"))
+        if len(seed) >= 3:
+            return seed
+    local = email.split("@", 1)[0] if email else ""
+    seed = _normalize_username(local)
+    return seed or "rider"
+
+
+def _ensure_unique_username(db: Session, base: str) -> str:
+    normalized_base = _normalize_username(base)
+    if len(normalized_base) < 3:
+        normalized_base = "rider"
+
+    candidate = normalized_base
+    suffix = 1
+    while db.query(models.User).filter(models.User.username == candidate).first() is not None:
+        candidate = f"{normalized_base}{suffix}"
+        suffix += 1
+    return candidate
+
 @router.post("/register", response_model=schemas.User)
 def create_user(user: schemas.UserCreate, db: Session = Depends(database.get_db)):
     db_user = db.query(models.User).filter(models.User.email == user.email).first()
     if db_user:
         raise HTTPException(status_code=400, detail="Email already registered")
+
+    requested_username = _normalize_username(user.username or "")
+    if requested_username and len(requested_username) < 3:
+        raise HTTPException(status_code=400, detail="Username must be at least 3 characters")
+
+    if requested_username:
+        username_exists = db.query(models.User).filter(models.User.username == requested_username).first()
+        if username_exists:
+            raise HTTPException(status_code=400, detail="Username already taken")
+        resolved_username = requested_username
+    else:
+        resolved_username = _ensure_unique_username(
+            db,
+            _derive_username_seed(user.email, user.full_name),
+        )
+
+    normalized_phone = (user.phone_number or "").strip() or None
+    if normalized_phone:
+        phone_exists = db.query(models.User).filter(models.User.phone_number == normalized_phone).first()
+        if phone_exists:
+            raise HTTPException(status_code=400, detail="Phone number already in use")
     
     hashed_password = auth.get_password_hash(user.password)
     new_user = models.User(
         email=user.email,
+        username=resolved_username,
+        phone_number=normalized_phone,
         hashed_password=hashed_password,
         full_name=user.full_name
     )
@@ -28,7 +81,13 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(database.get_db)
 
 @router.post("/login", response_model=schemas.Token)
 def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(database.get_db)):
-    user = db.query(models.User).filter(models.User.email == form_data.username).first()
+    credential = (form_data.username or "").strip().lower()
+    user = db.query(models.User).filter(
+        or_(
+            models.User.email == credential,
+            models.User.username == credential,
+        )
+    ).first()
     if not user or not auth.verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -56,7 +115,43 @@ def update_user_me(user_update: schemas.UserUpdate, db: Session = Depends(databa
         if existing and existing.id != current_user.id:
              raise HTTPException(status_code=400, detail="Email already registered")
         current_user.email = user_update.email
+    if user_update.username is not None:
+        normalized_username = _normalize_username(user_update.username)
+        if len(normalized_username) < 3:
+            raise HTTPException(status_code=400, detail="Username must be at least 3 characters")
+        existing_username = db.query(models.User).filter(models.User.username == normalized_username).first()
+        if existing_username and existing_username.id != current_user.id:
+            raise HTTPException(status_code=400, detail="Username already taken")
+        current_user.username = normalized_username
+    if user_update.phone_number is not None:
+        normalized_phone = user_update.phone_number.strip() or None
+        if normalized_phone:
+            existing_phone = db.query(models.User).filter(models.User.phone_number == normalized_phone).first()
+            if existing_phone and existing_phone.id != current_user.id:
+                raise HTTPException(status_code=400, detail="Phone number already in use")
+        current_user.phone_number = normalized_phone
     
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+
+@router.put("/me/location", response_model=schemas.User)
+def update_my_location(
+    payload: schemas.UserLocationUpdate,
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    if payload.lat < -90 or payload.lat > 90:
+        raise HTTPException(status_code=400, detail="lat must be between -90 and 90")
+    if payload.lng < -180 or payload.lng > 180:
+        raise HTTPException(status_code=400, detail="lng must be between -180 and 180")
+
+    current_user.last_known_lat = float(payload.lat)
+    current_user.last_known_lng = float(payload.lng)
+    current_user.last_location_label = (payload.label or "").strip() or None
+    current_user.last_location_updated_at = datetime.utcnow()
+
     db.commit()
     db.refresh(current_user)
     return current_user

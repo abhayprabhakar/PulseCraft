@@ -6,13 +6,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from .database import engine, Base
-from .routers import rides, auth, favorites, bikes, files as files_router
+from .routers import rides, auth, favorites, bikes, files as files_router, friends
 from .storage import get_uploads_dir
 
 # Create DB tables
 Base.metadata.create_all(bind=engine)
 
 from sqlalchemy import inspect
+import re
 def _ensure_ride_schema_columns() -> None:
     try:
         inspector = inspect(engine)
@@ -23,10 +24,80 @@ def _ensure_ride_schema_columns() -> None:
         if 'laps' not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE rides ADD COLUMN laps JSON"))
+        if 'visibility' not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE rides ADD COLUMN visibility VARCHAR DEFAULT 'private'"))
+
+        with engine.begin() as conn:
+            conn.execute(text("UPDATE rides SET visibility = 'private' WHERE visibility IS NULL OR visibility = ''"))
     except Exception as e:
         print(f"Schema check failed gracefully: {e}")
 
 _ensure_ride_schema_columns()
+
+
+def _normalize_username_seed(value: str) -> str:
+    cleaned = re.sub(r"[^a-zA-Z0-9_.]", "", (value or "").strip().lower())
+    cleaned = cleaned.strip("._")
+    return cleaned or "rider"
+
+
+def _ensure_user_schema_columns() -> None:
+    try:
+        inspector = inspect(engine)
+        if not inspector.has_table("users"):
+            return
+
+        columns = [col['name'] for col in inspector.get_columns("users")]
+
+        alter_statements = {
+            'username': "ALTER TABLE users ADD COLUMN username VARCHAR",
+            'phone_number': "ALTER TABLE users ADD COLUMN phone_number VARCHAR",
+            'last_known_lat': "ALTER TABLE users ADD COLUMN last_known_lat FLOAT",
+            'last_known_lng': "ALTER TABLE users ADD COLUMN last_known_lng FLOAT",
+            'last_location_label': "ALTER TABLE users ADD COLUMN last_location_label VARCHAR",
+            'last_location_updated_at': "ALTER TABLE users ADD COLUMN last_location_updated_at DATETIME",
+        }
+
+        with engine.begin() as conn:
+            for col_name, statement in alter_statements.items():
+                if col_name not in columns:
+                    conn.execute(text(statement))
+
+            users = conn.execute(text("SELECT id, email, full_name, username FROM users ORDER BY id ASC")).fetchall()
+            used_usernames = set()
+
+            for row in users:
+                user_id = row[0]
+                email = row[1] or ""
+                full_name = row[2] or ""
+                username = (row[3] or "").strip().lower()
+
+                if username and username not in used_usernames:
+                    used_usernames.add(username)
+                    continue
+
+                seed = _normalize_username_seed(full_name.replace(" ", "_"))
+                if seed == "rider":
+                    email_local = email.split("@", 1)[0] if "@" in email else email
+                    seed = _normalize_username_seed(email_local)
+
+                candidate = seed
+                suffix = 1
+                while candidate in used_usernames:
+                    candidate = f"{seed}{suffix}"
+                    suffix += 1
+
+                used_usernames.add(candidate)
+                conn.execute(
+                    text("UPDATE users SET username = :username WHERE id = :user_id"),
+                    {"username": candidate, "user_id": user_id},
+                )
+    except Exception as e:
+        print(f"User schema check failed gracefully: {e}")
+
+
+_ensure_user_schema_columns()
 
 app = FastAPI(
     title="Raptor Analytics API",
@@ -64,6 +135,7 @@ app.include_router(rides.router)
 app.include_router(favorites.router)
 app.include_router(bikes.router)
 app.include_router(files_router.router)
+app.include_router(friends.router)
 
 @app.get("/")
 def read_root():

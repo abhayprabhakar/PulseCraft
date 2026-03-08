@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Request, Form
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Request, Form, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from typing import List, Optional, Any, Dict, Callable
 import pandas as pd
 import numpy as np
@@ -8,8 +9,9 @@ import re
 import json
 import gzip
 import httpx
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
+import secrets
 from .. import database, models, auth
 from ..models import Ride, User
 from ..schemas import (
@@ -19,6 +21,9 @@ from ..schemas import (
     ChatRequest,
     ChatResponse,
     RideUpdate,
+    RideVisibilityUpdate,
+    RideShareLinkCreate,
+    RideShareLinkOut,
     RideAnalysisResponse,
     LlmProvidersResponse,
     LlmProviderOption,
@@ -1892,6 +1897,7 @@ def _persist_uploaded_ride(ride_data: RideCreate, db: Session, current_user: Use
         total_distance_km=total_distance_km,
         telemetry_blob=ride_data.frames,
         laps=laps,
+        visibility="private",
         owner_id=current_user.id,
         bike_id=ride_data.bike_id
     )
@@ -1912,6 +1918,58 @@ def _get_chunk_limits() -> Dict[str, int]:
         "max_chunk_bytes": max_chunk_bytes,
         "max_compressed_bytes": max_compressed_bytes,
     }
+
+
+_RIDE_VISIBILITY_VALUES = {"private", "friends", "public", "link_only"}
+
+
+def _normalize_optional_datetime(value: Optional[datetime]) -> Optional[datetime]:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _are_friends(db: Session, owner_id: int, other_user_id: int) -> bool:
+    return (
+        db.query(models.Friendship)
+        .filter(
+            models.Friendship.user_id == owner_id,
+            models.Friendship.friend_id == other_user_id,
+        )
+        .first()
+        is not None
+    )
+
+
+def _can_user_view_ride(db: Session, ride: Ride, user: Optional[User]) -> bool:
+    if user is not None and ride.owner_id == user.id:
+        return True
+
+    visibility = (ride.visibility or "private").lower()
+    if visibility == "public":
+        return True
+    if visibility == "friends" and user is not None:
+        return _are_friends(db, ride.owner_id, user.id)
+    return False
+
+
+def _share_base_url() -> str:
+    return os.getenv("RIDE_SHARE_BASE_URL", "http://localhost:8008/api/v1/rides/shared/link")
+
+
+def _to_share_link_out(link: models.RideShareLink) -> RideShareLinkOut:
+    base_url = _share_base_url().rstrip("/")
+    return RideShareLinkOut(
+        id=link.id,
+        ride_id=link.ride_id,
+        token=link.token,
+        share_url=f"{base_url}/{link.token}",
+        created_at=link.created_at,
+        expires_at=link.expires_at,
+        revoked_at=link.revoked_at,
+    )
 
 
 @router.post("/upload_chunked/init", status_code=status.HTTP_201_CREATED)
@@ -2205,6 +2263,7 @@ async def upload_csv(bike_id: int = None, file: UploadFile = File(...), db: Sess
             total_distance_km=total_distance_km,
             telemetry_blob=df.to_dict('records'),
             laps=[],
+            visibility="private",
             owner_id=current_user.id,
             bike_id=bike_id
         )
@@ -2261,6 +2320,215 @@ def list_rides(skip: int = 0, limit: int = 50, bike_id: int = None, db: Session 
     db.commit()
 
     return rides
+
+
+@router.get("/shared/feed", response_model=List[RideSummary])
+def list_shared_feed(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    db: Session = Depends(database.get_db),
+    current_user: User = Depends(auth.get_current_user),
+):
+    friend_ids = [
+        row.friend_id
+        for row in db.query(models.Friendship.friend_id)
+        .filter(models.Friendship.user_id == current_user.id)
+        .all()
+    ]
+
+    query = db.query(Ride).filter(Ride.owner_id != current_user.id)
+    if friend_ids:
+        query = query.filter(
+            or_(
+                Ride.visibility == "public",
+                ((Ride.visibility == "friends") & (Ride.owner_id.in_(friend_ids))),
+            )
+        )
+    else:
+        query = query.filter(Ride.visibility == "public")
+
+    rides = query.order_by(Ride.started_at.desc()).offset(skip).limit(limit).all()
+    for ride in rides:
+        if ride.laps is None:
+            ride.laps = []
+        setattr(ride, "owner_name", (ride.owner.full_name or ride.owner.email) if ride.owner else None)
+    return rides
+
+
+@router.get("/shared/{ride_id}", response_model=RideDetail)
+def get_shared_ride(
+    ride_id: str,
+    db: Session = Depends(database.get_db),
+    current_user: User = Depends(auth.get_current_user),
+):
+    ride = db.query(Ride).filter(Ride.id == ride_id).first()
+    if not ride:
+        raise HTTPException(status_code=404, detail="Ride not found")
+
+    if not _can_user_view_ride(db, ride, current_user):
+        raise HTTPException(status_code=403, detail="Not authorized to view this ride")
+
+    if ride.laps is None:
+        ride.laps = []
+    setattr(ride, "owner_name", (ride.owner.full_name or ride.owner.email) if ride.owner else None)
+    return ride
+
+
+@router.get("/shared/link/{token}", response_model=RideDetail)
+def get_shared_ride_by_link(
+    token: str,
+    db: Session = Depends(database.get_db),
+):
+    link = (
+        db.query(models.RideShareLink)
+        .filter(models.RideShareLink.token == token)
+        .first()
+    )
+    if not link:
+        raise HTTPException(status_code=404, detail="Share link not found")
+
+    now = datetime.utcnow()
+    if link.revoked_at is not None:
+        raise HTTPException(status_code=410, detail="Share link has been revoked")
+    if link.expires_at is not None and link.expires_at <= now:
+        raise HTTPException(status_code=410, detail="Share link has expired")
+
+    ride = db.query(Ride).filter(Ride.id == link.ride_id).first()
+    if not ride:
+        raise HTTPException(status_code=404, detail="Ride not found")
+    if (ride.visibility or "private").lower() == "private":
+        raise HTTPException(status_code=403, detail="Ride is private")
+
+    link.last_accessed_at = now
+    db.commit()
+
+    if ride.laps is None:
+        ride.laps = []
+    setattr(ride, "owner_name", (ride.owner.full_name or ride.owner.email) if ride.owner else None)
+    return ride
+
+
+@router.put("/{ride_id}/visibility", response_model=RideSummary)
+def update_ride_visibility(
+    ride_id: str,
+    payload: RideVisibilityUpdate,
+    db: Session = Depends(database.get_db),
+    current_user: User = Depends(auth.get_current_user),
+):
+    ride = db.query(Ride).filter(Ride.id == ride_id).first()
+    if not ride:
+        raise HTTPException(status_code=404, detail="Ride not found")
+    if ride.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    visibility = (payload.visibility or "").strip().lower()
+    if visibility not in _RIDE_VISIBILITY_VALUES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid visibility. Allowed values: {sorted(_RIDE_VISIBILITY_VALUES)}",
+        )
+
+    ride.visibility = visibility
+    if visibility == "private":
+        db.query(models.RideShareLink).filter(
+            models.RideShareLink.ride_id == ride.id,
+            models.RideShareLink.revoked_at.is_(None),
+        ).update(
+            {models.RideShareLink.revoked_at: datetime.utcnow()},
+            synchronize_session=False,
+        )
+
+    db.commit()
+    db.refresh(ride)
+    if ride.laps is None:
+        ride.laps = []
+    setattr(ride, "owner_name", (ride.owner.full_name or ride.owner.email) if ride.owner else None)
+    return ride
+
+
+@router.post("/{ride_id}/share-links", response_model=RideShareLinkOut, status_code=status.HTTP_201_CREATED)
+def create_ride_share_link(
+    ride_id: str,
+    payload: RideShareLinkCreate,
+    db: Session = Depends(database.get_db),
+    current_user: User = Depends(auth.get_current_user),
+):
+    ride = db.query(Ride).filter(Ride.id == ride_id).first()
+    if not ride:
+        raise HTTPException(status_code=404, detail="Ride not found")
+    if ride.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    expires_at = _normalize_optional_datetime(payload.expires_at)
+    now = datetime.utcnow()
+    if expires_at is not None and expires_at <= now:
+        raise HTTPException(status_code=400, detail="expires_at must be in the future")
+
+    link = models.RideShareLink(
+        ride_id=ride.id,
+        token=secrets.token_urlsafe(32),
+        created_by_id=current_user.id,
+        expires_at=expires_at,
+    )
+    db.add(link)
+
+    if (ride.visibility or "private").lower() == "private":
+        ride.visibility = "link_only"
+
+    db.commit()
+    db.refresh(link)
+    return _to_share_link_out(link)
+
+
+@router.get("/{ride_id}/share-links", response_model=List[RideShareLinkOut])
+def list_ride_share_links(
+    ride_id: str,
+    db: Session = Depends(database.get_db),
+    current_user: User = Depends(auth.get_current_user),
+):
+    ride = db.query(Ride).filter(Ride.id == ride_id).first()
+    if not ride:
+        raise HTTPException(status_code=404, detail="Ride not found")
+    if ride.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    links = (
+        db.query(models.RideShareLink)
+        .filter(models.RideShareLink.ride_id == ride.id)
+        .order_by(models.RideShareLink.created_at.desc())
+        .all()
+    )
+    return [_to_share_link_out(link) for link in links]
+
+
+@router.delete("/{ride_id}/share-links/{link_id}", status_code=status.HTTP_204_NO_CONTENT)
+def revoke_ride_share_link(
+    ride_id: str,
+    link_id: int,
+    db: Session = Depends(database.get_db),
+    current_user: User = Depends(auth.get_current_user),
+):
+    ride = db.query(Ride).filter(Ride.id == ride_id).first()
+    if not ride:
+        raise HTTPException(status_code=404, detail="Ride not found")
+    if ride.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    link = (
+        db.query(models.RideShareLink)
+        .filter(
+            models.RideShareLink.id == link_id,
+            models.RideShareLink.ride_id == ride.id,
+        )
+        .first()
+    )
+    if not link:
+        raise HTTPException(status_code=404, detail="Share link not found")
+
+    if link.revoked_at is None:
+        link.revoked_at = datetime.utcnow()
+        db.commit()
+    return None
 
 @router.get("/{ride_id}", response_model=RideDetail)
 def get_ride(ride_id: str, db: Session = Depends(database.get_db), current_user: User = Depends(auth.get_current_user)):

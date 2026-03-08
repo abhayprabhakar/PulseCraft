@@ -45,6 +45,9 @@ class RideSummary(BaseModel):
     total_distance_km: Optional[float] = 0.0
     bike_id: Optional[int] = None
     laps: Optional[List[dict]] = []
+    visibility: Optional[str] = "private"
+    owner_id: Optional[int] = None
+    owner_name: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -121,6 +124,73 @@ class RideUpdate(BaseModel):
     title: Optional[str] = None
 
 
+class RideVisibilityUpdate(BaseModel):
+    visibility: str
+
+
+class RideShareLinkCreate(BaseModel):
+    expires_at: Optional[datetime] = None
+
+
+class RideShareLinkOut(BaseModel):
+    id: int
+    ride_id: str
+    token: str
+    share_url: str
+    created_at: datetime
+    expires_at: Optional[datetime] = None
+    revoked_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class FriendUserSummary(BaseModel):
+    id: int
+    username: str
+    full_name: Optional[str] = None
+    profile_picture_url: Optional[str] = None
+    mutual_friends_count: Optional[int] = 0
+
+
+class FriendRequestCreate(BaseModel):
+    target_username: Optional[str] = None
+    target_email: Optional[str] = None
+
+
+class FriendRequestResponse(BaseModel):
+    id: int
+    status: str
+    created_at: datetime
+    responded_at: Optional[datetime] = None
+    requester: FriendUserSummary
+    receiver: FriendUserSummary
+
+
+class FriendContactCandidate(BaseModel):
+    name: Optional[str] = None
+    phone_number: Optional[str] = None
+    email: Optional[str] = None
+    username: Optional[str] = None
+
+
+class FriendRecommendation(BaseModel):
+    user: FriendUserSummary
+    reason: str
+    from_contact_name: Optional[str] = None
+    distance_km: Optional[float] = None
+
+
+class FriendContactRecommendationRequest(BaseModel):
+    contacts: List[FriendContactCandidate] = []
+    limit: Optional[int] = 20
+
+
+class FriendContactRecommendationResponse(BaseModel):
+    from_contacts: List[FriendRecommendation]
+    suggested_for_you: List[FriendRecommendation]
+
+
 class ChatHistoryTurn(BaseModel):
     role: str
     content: str
@@ -159,6 +229,8 @@ class LlmProvidersResponse(BaseModel):
 
 class UserBase(BaseModel):
     email: str
+    username: Optional[str] = None
+    phone_number: Optional[str] = None
 
 class UserCreate(UserBase):
     password: str
@@ -168,6 +240,10 @@ class User(UserBase):
     id: int
     full_name: Optional[str] = None
     profile_picture_url: Optional[str] = None
+    last_known_lat: Optional[float] = None
+    last_known_lng: Optional[float] = None
+    last_location_label: Optional[str] = None
+    last_location_updated_at: Optional[datetime] = None
     created_at: datetime
     
     class Config:
@@ -176,6 +252,14 @@ class User(UserBase):
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     email: Optional[str] = None
+    username: Optional[str] = None
+    phone_number: Optional[str] = None
+
+
+class UserLocationUpdate(BaseModel):
+    lat: float
+    lng: float
+    label: Optional[str] = None
 
 class Token(BaseModel):
     access_token: str
