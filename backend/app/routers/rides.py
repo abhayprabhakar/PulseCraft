@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Request, Form, Query
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from typing import List, Optional, Any, Dict, Callable
@@ -30,6 +31,7 @@ from ..schemas import (
 )
 import os
 import time
+from html import escape
 from google import genai
 
 _MODEL_CACHE: Dict[str, Dict[str, Any]] = {}
@@ -1959,6 +1961,10 @@ def _share_base_url() -> str:
     return os.getenv("RIDE_SHARE_BASE_URL", "http://localhost:8008/api/v1/rides/shared/link")
 
 
+def _app_deep_link_base() -> str:
+    return os.getenv("PULSECRAFT_APP_DEEP_LINK_BASE", "pulsecraft://shared/link")
+
+
 def _to_share_link_out(link: models.RideShareLink) -> RideShareLinkOut:
     base_url = _share_base_url().rstrip("/")
     return RideShareLinkOut(
@@ -1970,6 +1976,205 @@ def _to_share_link_out(link: models.RideShareLink) -> RideShareLinkOut:
         expires_at=link.expires_at,
         revoked_at=link.revoked_at,
     )
+
+
+def _resolve_shared_link_ride(db: Session, token: str) -> tuple[models.RideShareLink, Ride]:
+        link = (
+                db.query(models.RideShareLink)
+                .filter(models.RideShareLink.token == token)
+                .first()
+        )
+        if not link:
+                raise HTTPException(status_code=404, detail="Share link not found")
+
+        now = datetime.utcnow()
+        if link.revoked_at is not None:
+                raise HTTPException(status_code=410, detail="Share link has been revoked")
+        if link.expires_at is not None and link.expires_at <= now:
+                raise HTTPException(status_code=410, detail="Share link has expired")
+
+        ride = db.query(Ride).filter(Ride.id == link.ride_id).first()
+        if not ride:
+                raise HTTPException(status_code=404, detail="Ride not found")
+        if (ride.visibility or "private").lower() == "private":
+                raise HTTPException(status_code=403, detail="Ride is private")
+
+        link.last_accessed_at = now
+        db.commit()
+
+        if ride.laps is None:
+                ride.laps = []
+        setattr(ride, "owner_name", (ride.owner.full_name or ride.owner.email) if ride.owner else None)
+        return link, ride
+
+
+def _format_duration_seconds(total_seconds: Optional[int]) -> str:
+        seconds = max(int(total_seconds or 0), 0)
+        mins, secs = divmod(seconds, 60)
+        hours, mins = divmod(mins, 60)
+        if hours > 0:
+                return f"{hours}h {mins}m"
+        if mins > 0:
+                return f"{mins}m {secs}s"
+        return f"{secs}s"
+
+
+def _render_shared_ride_page(token: str, ride: Ride, request: Request) -> str:
+        owner = getattr(ride, "owner_name", None) or "PulseCraft rider"
+        title = ride.title or "Shared Ride"
+        started_at_text = (ride.started_at or datetime.utcnow()).strftime("%d %b %Y, %I:%M %p")
+        deep_link = f"{_app_deep_link_base().rstrip('/')}/{token}"
+        web_json_url = f"{request.base_url}api/v1/rides/shared/link/{token}?format=json"
+
+        return f"""<!doctype html>
+<html lang=\"en\">
+<head>
+    <meta charset=\"utf-8\" />
+    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
+    <title>{escape(title)} - PulseCraft</title>
+    <meta name=\"description\" content=\"{escape(owner)} shared a ride with you on PulseCraft.\" />
+    <style>
+        :root {{
+            --bg0: #070a12;
+            --bg1: #0e1628;
+            --glass: rgba(255, 255, 255, 0.08);
+            --border: rgba(255, 255, 255, 0.22);
+            --text: #e8ecff;
+            --muted: #aeb6d6;
+            --accent: #9db7ff;
+            --ok: #17d3e3;
+        }}
+        * {{ box-sizing: border-box; }}
+        body {{
+            margin: 0;
+            min-height: 100vh;
+            font-family: "Segoe UI", "SF Pro Text", "Helvetica Neue", sans-serif;
+            color: var(--text);
+            background:
+                radial-gradient(50rem 30rem at 8% 90%, rgba(16, 177, 196, 0.17), transparent 60%),
+                radial-gradient(50rem 30rem at 92% 8%, rgba(157, 183, 255, 0.22), transparent 60%),
+                linear-gradient(165deg, var(--bg0), var(--bg1));
+            display: grid;
+            place-items: center;
+            padding: 20px;
+        }}
+        .card {{
+            width: min(560px, 100%);
+            border-radius: 24px;
+            border: 1px solid var(--border);
+            background: linear-gradient(145deg, rgba(255, 255, 255, 0.14), var(--glass));
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            padding: 24px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+        }}
+        .chip {{
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: .08em;
+            color: var(--ok);
+            border: 1px solid rgba(23, 211, 227, 0.4);
+            border-radius: 999px;
+            padding: 6px 10px;
+        }}
+        h1 {{ margin: 14px 0 6px; font-size: 30px; line-height: 1.15; }}
+        p {{ margin: 0; color: var(--muted); }}
+        .stats {{
+            margin-top: 18px;
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+        }}
+        .stat {{
+            border-radius: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            background: rgba(10, 14, 26, 0.42);
+            padding: 10px 12px;
+        }}
+        .stat .label {{ font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; }}
+        .stat .value {{ margin-top: 6px; font-size: 20px; font-weight: 700; color: var(--text); }}
+        .actions {{ display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }}
+        .btn {{
+            appearance: none;
+            border: 0;
+            border-radius: 12px;
+            padding: 11px 16px;
+            font-weight: 700;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 44px;
+        }}
+        .btn-primary {{ background: var(--accent); color: #18213b; }}
+        .btn-secondary {{ background: rgba(255,255,255,.12); color: var(--text); border: 1px solid rgba(255,255,255,.2); }}
+        .foot {{ margin-top: 12px; font-size: 12px; color: #92a0cc; }}
+        @media (max-width: 560px) {{
+            .card {{ padding: 18px; border-radius: 18px; }}
+            h1 {{ font-size: 24px; }}
+        }}
+    </style>
+</head>
+<body>
+    <main class=\"card\">
+        <span class=\"chip\">Shared from PulseCraft</span>
+        <h1>{escape(title)}</h1>
+        <p>by {escape(owner)} • {escape(started_at_text)}</p>
+
+        <section class=\"stats\">
+            <article class=\"stat\"><div class=\"label\">Distance</div><div class=\"value\">{(ride.total_distance_km or 0.0):.1f} km</div></article>
+            <article class=\"stat\"><div class=\"label\">Avg Speed</div><div class=\"value\">{(ride.avg_speed or 0.0):.1f} km/h</div></article>
+            <article class=\"stat\"><div class=\"label\">Duration</div><div class=\"value\">{escape(_format_duration_seconds(ride.duration_seconds))}</div></article>
+        </section>
+
+        <div class=\"actions\">
+            <a class=\"btn btn-primary\" id=\"open-app\" href=\"{escape(deep_link)}\">Open In App</a>
+            <a class=\"btn btn-secondary\" href=\"{escape(web_json_url)}\">View Raw Link API</a>
+        </div>
+
+        <p class=\"foot\">If the app is not installed, stay on this page to view summary details.</p>
+    </main>
+
+    <script>
+        (function() {{
+            var deepLink = {json.dumps(deep_link)};
+            var ua = navigator.userAgent || "";
+            var isMobile = /Android|iPhone|iPad|iPod/i.test(ua);
+            if (!isMobile) return;
+
+            var opened = false;
+            var clickBtn = document.getElementById("open-app");
+            if (clickBtn) {{
+                clickBtn.addEventListener("click", function() {{ opened = true; }});
+            }}
+
+            setTimeout(function() {{
+                if (!opened) {{
+                    window.location.href = deepLink;
+                }}
+            }}, 350);
+        }})();
+    </script>
+</body>
+</html>"""
+
+
+def _render_share_error_page(detail: str) -> str:
+        safe_detail = escape(detail or "Unable to open this ride link")
+        return f"""<!doctype html>
+<html lang=\"en\"><head><meta charset=\"utf-8\" /><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
+<title>Ride Link Unavailable</title>
+<style>
+    body {{ margin:0; min-height:100vh; display:grid; place-items:center; background:linear-gradient(165deg,#070a12,#0e1628); color:#e8ecff; font-family:"Segoe UI",sans-serif; padding:20px; }}
+    .card {{ width:min(480px,100%); padding:22px; border-radius:18px; border:1px solid rgba(255,255,255,.22); background:rgba(255,255,255,.08); backdrop-filter: blur(12px); }}
+    h1 {{ margin:0 0 8px; font-size:26px; }}
+    p {{ margin:0; color:#b7c0e2; }}
+</style></head>
+<body><main class=\"card\"><h1>Ride Link Unavailable</h1><p>{safe_detail}</p></main></body></html>"""
 
 
 @router.post("/upload_chunked/init", status_code=status.HTTP_201_CREATED)
@@ -2377,34 +2582,25 @@ def get_shared_ride(
 @router.get("/shared/link/{token}", response_model=RideDetail)
 def get_shared_ride_by_link(
     token: str,
+    request: Request,
+    format: Optional[str] = Query(None),
     db: Session = Depends(database.get_db),
 ):
-    link = (
-        db.query(models.RideShareLink)
-        .filter(models.RideShareLink.token == token)
-        .first()
-    )
-    if not link:
-        raise HTTPException(status_code=404, detail="Share link not found")
+    accept_header = (request.headers.get("accept") or "").lower()
+    wants_html = ("text/html" in accept_header) and (format or "").lower() != "json"
 
-    now = datetime.utcnow()
-    if link.revoked_at is not None:
-        raise HTTPException(status_code=410, detail="Share link has been revoked")
-    if link.expires_at is not None and link.expires_at <= now:
-        raise HTTPException(status_code=410, detail="Share link has expired")
+    try:
+        link, ride = _resolve_shared_link_ride(db, token)
+    except HTTPException as exc:
+        if wants_html:
+            return HTMLResponse(
+                content=_render_share_error_page(str(exc.detail)),
+                status_code=exc.status_code,
+            )
+        raise
 
-    ride = db.query(Ride).filter(Ride.id == link.ride_id).first()
-    if not ride:
-        raise HTTPException(status_code=404, detail="Ride not found")
-    if (ride.visibility or "private").lower() == "private":
-        raise HTTPException(status_code=403, detail="Ride is private")
-
-    link.last_accessed_at = now
-    db.commit()
-
-    if ride.laps is None:
-        ride.laps = []
-    setattr(ride, "owner_name", (ride.owner.full_name or ride.owner.email) if ride.owner else None)
+    if wants_html:
+        return HTMLResponse(content=_render_shared_ride_page(token=token, ride=ride, request=request))
     return ride
 
 
