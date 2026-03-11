@@ -44,6 +44,8 @@ class RideSummary(BaseModel):
     max_rpm: Optional[int] = 0
     total_distance_km: Optional[float] = 0.0
     bike_id: Optional[int] = None
+    bike_name: Optional[str] = None
+    map_preview_points: Optional[List[List[float]]] = None
     laps: Optional[List[dict]] = []
     visibility: Optional[str] = "private"
     owner_id: Optional[int] = None
@@ -109,6 +111,11 @@ class CoachingSummary(BaseModel):
     strengths: List[str]
     weaknesses: List[str]
     drills: List[str]
+    llm_enhanced: Optional[bool] = None
+    source: Optional[str] = None
+    llm_provider: Optional[str] = None
+    llm_model: Optional[str] = None
+    llm_note: Optional[str] = None
 
 class RideAnalysisResponse(BaseModel):
     map_segments: List[MapSegment]

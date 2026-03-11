@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Request, Form, Query
 from fastapi.responses import HTMLResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 from sqlalchemy import or_
 from typing import List, Optional, Any, Dict, Callable
 import pandas as pd
@@ -2204,9 +2204,7 @@ def _resolve_shared_link_ride(db: Session, token: str) -> tuple[models.RideShare
         link.last_accessed_at = now
         db.commit()
 
-        if ride.laps is None:
-                ride.laps = []
-        setattr(ride, "owner_name", (ride.owner.full_name or ride.owner.email) if ride.owner else None)
+        _decorate_ride_response(ride)
         return link, ride
 
 
@@ -2230,9 +2228,19 @@ def _extract_share_map_points(telemetry_blob: Any, max_points: int = 280) -> Lis
         if not isinstance(frame, dict):
             continue
 
+        lat_value = frame.get("lat")
+        if lat_value is None:
+            lat_value = frame.get("latitude")
+
+        lng_value = frame.get("lng")
+        if lng_value is None:
+            lng_value = frame.get("lon")
+        if lng_value is None:
+            lng_value = frame.get("longitude")
+
         try:
-            lat = float(frame.get("lat"))
-            lng = float(frame.get("lng"))
+            lat = float(lat_value)
+            lng = float(lng_value)
         except Exception:
             continue
 
@@ -2249,6 +2257,50 @@ def _extract_share_map_points(telemetry_blob: Any, max_points: int = 280) -> Lis
     sampled_indexes = np.linspace(0, len(raw_points) - 1, num=max_points, dtype=int).tolist()
     sampled_points = [raw_points[index] for index in sampled_indexes]
     return sampled_points
+
+
+def _bike_display_name(ride: Ride) -> Optional[str]:
+    bike = ride.bike
+    if bike is None and ride.bike_id is not None:
+        lookup_session = object_session(ride)
+        if lookup_session is not None:
+            bike = (
+                lookup_session.query(models.Bike)
+                .filter(models.Bike.id == ride.bike_id)
+                .first()
+            )
+
+    if bike is None:
+        return f"Bike #{ride.bike_id}" if ride.bike_id is not None else None
+
+    make = (bike.make or "").strip()
+    model = (bike.model or "").strip()
+    year = str(bike.year).strip() if bike.year else ""
+    make_model = " ".join(part for part in [make, model] if part)
+
+    if year and make_model:
+        return f"{year} {make_model}"
+    if make_model:
+        return make_model
+
+    bike_name = (bike.name or "").strip()
+    if year and bike_name:
+        return f"{year} {bike_name}"
+    return bike_name or None
+
+
+def _decorate_ride_response(ride: Ride, map_points_limit: int = 140) -> None:
+    if ride.laps is None:
+        ride.laps = []
+
+    owner_name = (ride.owner.full_name or ride.owner.email) if ride.owner else None
+    setattr(ride, "owner_name", owner_name)
+    setattr(ride, "bike_name", _bike_display_name(ride))
+    setattr(
+        ride,
+        "map_preview_points",
+        _extract_share_map_points(getattr(ride, "telemetry_blob", None), max_points=map_points_limit),
+    )
 
 
 def _render_shared_ride_page(token: str, ride: Ride, request: Request) -> str:
@@ -2819,6 +2871,7 @@ def list_rides(skip: int = 0, limit: int = 50, bike_id: int = None, db: Session 
                     if computed_dist > 0:
                         db.query(Ride).filter(Ride.id == ride.id).update({"total_distance_km": computed_dist})
                         ride.total_distance_km = computed_dist
+        _decorate_ride_response(ride)
     db.commit()
 
     return rides
@@ -2851,9 +2904,7 @@ def list_shared_feed(
 
     rides = query.order_by(Ride.started_at.desc()).offset(skip).limit(limit).all()
     for ride in rides:
-        if ride.laps is None:
-            ride.laps = []
-        setattr(ride, "owner_name", (ride.owner.full_name or ride.owner.email) if ride.owner else None)
+        _decorate_ride_response(ride)
     return rides
 
 
@@ -2870,9 +2921,7 @@ def get_shared_ride(
     if not _can_user_view_ride(db, ride, current_user):
         raise HTTPException(status_code=403, detail="Not authorized to view this ride")
 
-    if ride.laps is None:
-        ride.laps = []
-    setattr(ride, "owner_name", (ride.owner.full_name or ride.owner.email) if ride.owner else None)
+    _decorate_ride_response(ride)
     return ride
 
 
@@ -2942,9 +2991,7 @@ def update_ride_visibility(
 
     db.commit()
     db.refresh(ride)
-    if ride.laps is None:
-        ride.laps = []
-    setattr(ride, "owner_name", (ride.owner.full_name or ride.owner.email) if ride.owner else None)
+    _decorate_ride_response(ride)
     return ride
 
 
@@ -3060,8 +3107,7 @@ def get_ride(ride_id: str, db: Session = Depends(database.get_db), current_user:
         raise HTTPException(status_code=404, detail="Ride not found")
     if ride.owner_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to view this ride")
-    if ride.laps is None:
-        ride.laps = []
+    _decorate_ride_response(ride)
     return ride
 
 @router.put("/{ride_id}/update", response_model=RideSummary)
@@ -3078,6 +3124,7 @@ def update_ride(ride_id: str, payload: RideUpdate, db: Session = Depends(databas
         db.query(Ride).filter(Ride.id == ride_id).update({"title": new_title})
         db.commit()
         ride.title = new_title
+    _decorate_ride_response(ride)
     return ride
 
 @router.get("/{ride_id}/analysis", response_model=RideAnalysisResponse)
@@ -3306,6 +3353,7 @@ def update_ride(ride_id: str, update_data: RideUpdateSchema, db: Session = Depen
 
     db.commit()
     db.refresh(ride)
+    _decorate_ride_response(ride)
     return ride
 
 

@@ -5,7 +5,7 @@ import math
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import or_, func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from .. import auth, database, models, schemas
 
@@ -149,6 +149,84 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return radius_km * (2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
 
 
+def _bike_display_name(ride: models.Ride, db: Optional[Session] = None) -> Optional[str]:
+    bike = ride.bike
+    if bike is None and ride.bike_id is not None:
+        lookup_session = db or object_session(ride)
+        if lookup_session is not None:
+            bike = (
+                lookup_session.query(models.Bike)
+                .filter(models.Bike.id == ride.bike_id)
+                .first()
+            )
+
+    if bike is None:
+        return f"Bike #{ride.bike_id}" if ride.bike_id is not None else None
+
+    make = (bike.make or "").strip()
+    model = (bike.model or "").strip()
+    year = str(bike.year).strip() if bike.year else ""
+
+    make_model = " ".join(part for part in [make, model] if part)
+    if year and make_model:
+        return f"{year} {make_model}"
+    if make_model:
+        return make_model
+
+    bike_name = (bike.name or "").strip()
+    if year and bike_name:
+        return f"{year} {bike_name}"
+    return bike_name or None
+
+
+def _extract_map_preview_points(
+    telemetry_blob: Optional[List[dict]],
+    max_points: int = 120,
+) -> List[List[float]]:
+    if not isinstance(telemetry_blob, list):
+        return []
+
+    points: List[List[float]] = []
+    for frame in telemetry_blob:
+        if not isinstance(frame, dict):
+            continue
+
+        lat_value = frame.get("lat")
+        if lat_value is None:
+            lat_value = frame.get("latitude")
+
+        lng_value = frame.get("lng")
+        if lng_value is None:
+            lng_value = frame.get("lon")
+        if lng_value is None:
+            lng_value = frame.get("longitude")
+
+        try:
+            lat = float(lat_value)
+            lng = float(lng_value)
+        except Exception:
+            continue
+
+        if not math.isfinite(lat) or not math.isfinite(lng):
+            continue
+        if abs(lat) > 90 or abs(lng) > 180:
+            continue
+
+        points.append([round(lat, 6), round(lng, 6)])
+
+    if len(points) <= max_points:
+        return points
+
+    if max_points <= 1:
+        return [points[0]]
+
+    stride = (len(points) - 1) / (max_points - 1)
+    sampled_indexes = sorted(
+        {int(round(index * stride)) for index in range(max_points)}
+    )
+    return [points[index] for index in sampled_indexes]
+
+
 def _excluded_user_ids_for_recommendations(db: Session, current_user: models.User) -> Set[int]:
     excluded = {current_user.id}
     excluded.update(_friend_ids(db, current_user.id))
@@ -233,7 +311,7 @@ def _build_suggested_for_you(
     return recommendations
 
 
-def _to_ride_summary(ride: models.Ride) -> schemas.RideSummary:
+def _to_ride_summary(db: Session, ride: models.Ride) -> schemas.RideSummary:
     started_at = ride.started_at or datetime.utcnow()
     owner_name = None
     if ride.owner is not None:
@@ -250,6 +328,8 @@ def _to_ride_summary(ride: models.Ride) -> schemas.RideSummary:
         max_rpm=ride.max_rpm or 0,
         total_distance_km=ride.total_distance_km or 0.0,
         bike_id=ride.bike_id,
+        bike_name=_bike_display_name(ride, db=db),
+        map_preview_points=_extract_map_preview_points(ride.telemetry_blob),
         laps=ride.laps or [],
         visibility=ride.visibility or "private",
         owner_id=ride.owner_id,
@@ -456,7 +536,7 @@ def get_friend_profile_rides(
         query = query.filter(models.Ride.visibility == "public")
 
     rides = query.order_by(models.Ride.started_at.desc()).offset(skip).limit(limit).all()
-    return [_to_ride_summary(ride) for ride in rides]
+    return [_to_ride_summary(db, ride) for ride in rides]
 
 
 @router.post("/recommendations/contacts", response_model=schemas.FriendContactRecommendationResponse)
