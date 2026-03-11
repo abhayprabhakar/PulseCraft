@@ -378,7 +378,16 @@ def get_friend_profile(
     is_self = target_user.id == current_user.id
     is_following = is_self or _are_friends(db, current_user.id, target_user.id)
     is_follower = is_self or _are_friends(db, target_user.id, current_user.id)
-    can_view_rides = is_following or is_self
+    public_rides_count = (
+        db.query(models.Ride)
+        .filter(
+            models.Ride.owner_id == target_user.id,
+            models.Ride.visibility == "public",
+        )
+        .count()
+    )
+
+    can_view_rides = is_following or is_self or public_rides_count > 0
 
     following_count = (
         db.query(models.Friendship)
@@ -390,11 +399,13 @@ def get_friend_profile(
         .filter(models.Friendship.friend_id == target_user.id)
         .count()
     )
+    visible_shared_visibilities = ["friends", "public"] if (is_self or is_following) else ["public"]
+
     shared_rides_count = (
         db.query(models.Ride)
         .filter(
             models.Ride.owner_id == target_user.id,
-            models.Ride.visibility.in_(["friends", "public"]),
+            models.Ride.visibility.in_(visible_shared_visibilities),
         )
         .count()
     )
@@ -438,13 +449,11 @@ def get_friend_profile_rides(
 
     is_self = target_user.id == current_user.id
     is_following = _are_friends(db, current_user.id, target_user.id)
-    can_view_rides = is_self or is_following
-    if not can_view_rides:
-        return []
-
     query = db.query(models.Ride).filter(models.Ride.owner_id == target_user.id)
-    if not is_self:
+    if not is_self and is_following:
         query = query.filter(models.Ride.visibility.in_(["friends", "public"]))
+    elif not is_self:
+        query = query.filter(models.Ride.visibility == "public")
 
     rides = query.order_by(models.Ride.started_at.desc()).offset(skip).limit(limit).all()
     return [_to_ride_summary(ride) for ride in rides]

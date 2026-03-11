@@ -233,6 +233,183 @@ def _build_coaching(scorecards, segment_analytics):
         'drills': drills[:3]
     }
 
+
+def _sanitize_coaching_lines(raw_items: Any, fallback_items: List[str], max_items: int = 3) -> List[str]:
+    cleaned: List[str] = []
+
+    if isinstance(raw_items, list):
+        for item in raw_items:
+            text = re.sub(r"\s+", " ", str(item or "")).strip()
+            if not text:
+                continue
+            if len(text) > 240:
+                text = text[:237].rstrip() + "..."
+            if text not in cleaned:
+                cleaned.append(text)
+            if len(cleaned) >= max_items:
+                break
+
+    if cleaned:
+        return cleaned[:max_items]
+
+    fallback: List[str] = []
+    for item in fallback_items or []:
+        text = re.sub(r"\s+", " ", str(item or "")).strip()
+        if not text:
+            continue
+        if text not in fallback:
+            fallback.append(text)
+        if len(fallback) >= max_items:
+            break
+
+    return fallback[:max_items]
+
+
+def _build_coaching_with_optional_llm(
+    scorecards: Dict[str, Any],
+    segment_analytics: List[Dict[str, Any]],
+    base_coaching: Dict[str, Any],
+) -> Dict[str, Any]:
+    fallback_payload = {
+        "strengths": _sanitize_coaching_lines(base_coaching.get("strengths"), [], max_items=3),
+        "weaknesses": _sanitize_coaching_lines(base_coaching.get("weaknesses"), [], max_items=3),
+        "drills": _sanitize_coaching_lines(base_coaching.get("drills"), [], max_items=3),
+        "llm_enhanced": False,
+        "source": "rule_engine",
+        "llm_provider": None,
+        "llm_model": None,
+        "llm_note": "Rule-engine coaching active. LLM enhancement was not used for this response.",
+    }
+
+    if not segment_analytics:
+        fallback_payload["llm_note"] = "Rule-engine coaching active because segment-level telemetry detail is insufficient for LLM enrichment."
+        return fallback_payload
+
+    try:
+        registry = _load_llm_provider_registry()
+        selected_provider = _resolve_selected_provider(
+            registry=registry,
+            requested_provider=None,
+            requested_model=None,
+            api_key=None,
+        )
+
+        # Analysis coaching should be automatic and stable; keep a bounded provider timeout.
+        selected_provider["timeout_seconds"] = 18
+
+        provider_id = str(selected_provider.get("id") or "unknown-provider")
+        model_name = str(selected_provider.get("resolved_model") or selected_provider.get("default_model") or "unknown-model")
+
+        sorted_segments = sorted(
+            segment_analytics,
+            key=lambda segment: float(segment.get("time_delta_vs_best_s") or 0.0),
+            reverse=True,
+        )
+        top_segments = [
+            {
+                "segment_id": str(segment.get("segment_id") or "N/A"),
+                "time_delta_vs_best_s": round(float(segment.get("time_delta_vs_best_s") or 0.0), 3),
+                "primary_issue": str(segment.get("primary_issue") or "unknown"),
+                "risk_score_0_100": int(np.clip(float(segment.get("risk_score_0_100") or 0.0), 0, 100)),
+                "throttle_delay_ms": int(max(0, float(segment.get("throttle_delay_ms") or 0.0))),
+                "peak_decel_mps2": round(float(segment.get("peak_decel_mps2") or 0.0), 3),
+            }
+            for segment in sorted_segments[:6]
+        ]
+
+        issue_distribution = pd.Series([
+            str(segment.get("primary_issue") or "unknown")
+            for segment in segment_analytics
+        ]).value_counts().to_dict()
+
+        prompt_payload = {
+            "scorecards": {
+                "smoothness_score": int(np.clip(float(scorecards.get("smoothness_score") or 0.0), 0, 100)),
+                "efficiency_score": int(np.clip(float(scorecards.get("efficiency_score") or 0.0), 0, 100)),
+                "consistency_score": int(np.clip(float(scorecards.get("consistency_score") or 0.0), 0, 100)),
+                "risk_index": int(np.clip(float(scorecards.get("risk_index") or 0.0), 0, 100)),
+                "estimated_time_loss_s": round(float(scorecards.get("estimated_time_loss_s") or 0.0), 3),
+            },
+            "issue_distribution": issue_distribution,
+            "top_segments": top_segments,
+            "rule_engine_coaching": {
+                "strengths": fallback_payload["strengths"],
+                "weaknesses": fallback_payload["weaknesses"],
+                "drills": fallback_payload["drills"],
+            },
+        }
+
+        llm_prompt = f"""
+You are a senior motorcycle race engineer and telemetry performance coach.
+
+Your task is to upgrade a deterministic coaching draft into a production-quality coaching brief.
+You must stay grounded strictly in the provided telemetry-derived evidence.
+
+Objectives:
+1) Preserve what is already correct from the rule-engine coaching.
+2) Improve specificity, sequencing, and measurability of coaching actions.
+3) Keep language rider-friendly and concise enough for in-app display.
+4) Prioritize highest lap-time impact first.
+
+Hard constraints:
+- Do not invent data, events, or segments beyond provided context.
+- Do not use internal snake_case wording in final text.
+- Do not mention "as an AI".
+- Each bullet must be one sentence and actionable.
+- Strengths: max 3 bullets, each <= 160 chars.
+- Weaknesses: max 3 bullets, each <= 180 chars.
+- Drills: max 3 bullets, each <= 190 chars and include a measurable target (pace %, count, delta, or threshold).
+
+Data context (JSON):
+{_safe_json_for_prompt(prompt_payload, max_chars=12000)}
+
+Return ONLY valid JSON in this exact schema:
+{{
+  "strengths": ["..."],
+  "weaknesses": ["..."],
+  "drills": ["..."],
+  "insight_confidence": "high|medium|low",
+  "coach_note": "short note explaining confidence and limits in <= 160 chars"
+}}
+"""
+
+        llm_text = _generate_text_with_provider(selected_provider, llm_prompt)
+        llm_payload = _extract_json_dict(llm_text)
+
+        enriched_strengths = _sanitize_coaching_lines(llm_payload.get("strengths"), fallback_payload["strengths"], max_items=3)
+        enriched_weaknesses = _sanitize_coaching_lines(llm_payload.get("weaknesses"), fallback_payload["weaknesses"], max_items=3)
+        enriched_drills = _sanitize_coaching_lines(llm_payload.get("drills"), fallback_payload["drills"], max_items=3)
+
+        confidence = str(llm_payload.get("insight_confidence") or "medium").strip().lower()
+        if confidence not in {"high", "medium", "low"}:
+            confidence = "medium"
+
+        coach_note = re.sub(r"\s+", " ", str(llm_payload.get("coach_note") or "")).strip()
+        if len(coach_note) > 160:
+            coach_note = coach_note[:157].rstrip() + "..."
+
+        if not coach_note:
+            coach_note = "LLM refinement applied using telemetry scorecards and top segment losses."
+
+        return {
+            "strengths": enriched_strengths,
+            "weaknesses": enriched_weaknesses,
+            "drills": enriched_drills,
+            "llm_enhanced": True,
+            "source": "llm_enhanced",
+            "llm_provider": provider_id,
+            "llm_model": model_name,
+            "llm_note": f"LLM-enhanced ({provider_id}/{model_name}, confidence: {confidence}). {coach_note}",
+        }
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, dict) else {}
+        user_message = str(detail.get("user_message") or detail.get("code") or "provider unavailable")
+        fallback_payload["llm_note"] = f"Rule-engine coaching active because LLM enrichment is unavailable: {user_message}."
+        return fallback_payload
+    except Exception as exc:
+        fallback_payload["llm_note"] = f"Rule-engine coaching active because LLM enrichment failed unexpectedly: {str(exc)[:140]}."
+        return fallback_payload
+
 def compute_duration_seconds(df: pd.DataFrame) -> int:
     """Derive ride duration from telemetry timestamps, trying common column names."""
     # Normalize column names to lowercase for matching
@@ -1933,6 +2110,23 @@ def _normalize_optional_datetime(value: Optional[datetime]) -> Optional[datetime
     return value.astimezone(timezone.utc).replace(tzinfo=None)
 
 
+def _has_active_share_link(db: Session, ride_id: str) -> bool:
+    now = datetime.utcnow()
+    return (
+        db.query(models.RideShareLink.id)
+        .filter(
+            models.RideShareLink.ride_id == ride_id,
+            models.RideShareLink.revoked_at.is_(None),
+            or_(
+                models.RideShareLink.expires_at.is_(None),
+                models.RideShareLink.expires_at > now,
+            ),
+        )
+        .first()
+        is not None
+    )
+
+
 def _are_friends(db: Session, owner_id: int, other_user_id: int) -> bool:
     return (
         db.query(models.Friendship)
@@ -2001,7 +2195,10 @@ def _resolve_shared_link_ride(db: Session, token: str) -> tuple[models.RideShare
         ride = db.query(Ride).filter(Ride.id == link.ride_id).first()
         if not ride:
                 raise HTTPException(status_code=404, detail="Ride not found")
-        if (ride.visibility or "private").lower() == "private":
+        visibility = (ride.visibility or "private").lower()
+        if visibility not in _RIDE_VISIBILITY_VALUES:
+            raise HTTPException(status_code=403, detail="Ride visibility is invalid")
+        if visibility == "private":
                 raise HTTPException(status_code=403, detail="Ride is private")
 
         link.last_accessed_at = now
@@ -2733,6 +2930,15 @@ def update_ride_visibility(
             {models.RideShareLink.revoked_at: datetime.utcnow()},
             synchronize_session=False,
         )
+    elif visibility == "link_only" and not _has_active_share_link(db, ride.id):
+        # Prevent dead-end link_only state by ensuring at least one active link exists.
+        db.add(
+            models.RideShareLink(
+                ride_id=ride.id,
+                token=secrets.token_urlsafe(32),
+                created_by_id=current_user.id,
+            )
+        )
 
     db.commit()
     db.refresh(ride)
@@ -2825,6 +3031,25 @@ def revoke_ride_share_link(
 
     if link.revoked_at is None:
         link.revoked_at = datetime.utcnow()
+
+        if (ride.visibility or "private").lower() == "link_only":
+            has_remaining_active_links = (
+                db.query(models.RideShareLink.id)
+                .filter(
+                    models.RideShareLink.ride_id == ride.id,
+                    models.RideShareLink.id != link.id,
+                    models.RideShareLink.revoked_at.is_(None),
+                    or_(
+                        models.RideShareLink.expires_at.is_(None),
+                        models.RideShareLink.expires_at > datetime.utcnow(),
+                    ),
+                )
+                .first()
+                is not None
+            )
+            if not has_remaining_active_links:
+                ride.visibility = "private"
+
         db.commit()
     return None
 
@@ -2856,7 +3081,12 @@ def update_ride(ride_id: str, payload: RideUpdate, db: Session = Depends(databas
     return ride
 
 @router.get("/{ride_id}/analysis", response_model=RideAnalysisResponse)
-def get_ride_analysis(ride_id: str, db: Session = Depends(database.get_db), current_user: User = Depends(auth.get_current_user)):
+def get_ride_analysis(
+    ride_id: str,
+    force_refresh: bool = Query(False),
+    db: Session = Depends(database.get_db),
+    current_user: User = Depends(auth.get_current_user),
+):
     ride = db.query(Ride).filter(Ride.id == ride_id).first()
     if not ride:
         raise HTTPException(status_code=404, detail="Ride not found")
@@ -2864,8 +3094,30 @@ def get_ride_analysis(ride_id: str, db: Session = Depends(database.get_db), curr
     if ride.owner_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to view this analysis")
 
+    if not force_refresh and ride.analysis_blob:
+        cached_blob = ride.analysis_blob if isinstance(ride.analysis_blob, dict) else {}
+        cached_coaching = cached_blob.get("coaching") if isinstance(cached_blob, dict) else None
+
+        if isinstance(cached_coaching, dict) and "llm_note" not in cached_coaching:
+            retro_base = {
+                "strengths": cached_coaching.get("strengths") or [],
+                "weaknesses": cached_coaching.get("weaknesses") or [],
+                "drills": cached_coaching.get("drills") or [],
+            }
+            retro_scorecards = cached_blob.get("scorecards") if isinstance(cached_blob.get("scorecards"), dict) else {}
+            retro_segments = cached_blob.get("segment_analytics") if isinstance(cached_blob.get("segment_analytics"), list) else []
+            cached_blob["coaching"] = _build_coaching_with_optional_llm(retro_scorecards, retro_segments, retro_base)
+
+            sanitized_cached = recursive_sanitize(cached_blob)
+            ride.analysis_blob = sanitized_cached
+            ride.analysis_updated_at = datetime.utcnow()
+            db.commit()
+            return sanitized_cached
+
+        return ride.analysis_blob
+
     if not ride.telemetry_blob:
-         return {"error": "No telemetry data"}
+        raise HTTPException(status_code=400, detail="No telemetry data")
 
     df = pd.DataFrame(ride.telemetry_blob)
     
@@ -2906,7 +3158,8 @@ def get_ride_analysis(ride_id: str, db: Session = Depends(database.get_db), curr
         'risk_index': int(risk_index),
         'estimated_time_loss_s': estimated_time_loss,
     }
-    coaching = _build_coaching(scorecards, segment_analytics)
+    base_coaching = _build_coaching(scorecards, segment_analytics)
+    coaching = _build_coaching_with_optional_llm(scorecards, segment_analytics, base_coaching)
     
     # 2. ML Clustering Mock
     trip_features = extract_trip_features(df)
@@ -2992,8 +3245,13 @@ def get_ride_analysis(ride_id: str, db: Session = Depends(database.get_db), curr
         "coaching": coaching,
         "summary": "Analysis complete"
     }
-    
-    return recursive_sanitize(response_data)
+
+    sanitized = recursive_sanitize(response_data)
+    ride.analysis_blob = sanitized
+    ride.analysis_updated_at = datetime.utcnow()
+    db.commit()
+
+    return sanitized
 
 @router.delete("/{ride_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_ride(ride_id: str, db: Session = Depends(database.get_db), current_user: User = Depends(auth.get_current_user)):
