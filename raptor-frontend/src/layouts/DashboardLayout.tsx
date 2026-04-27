@@ -1,6 +1,6 @@
 import React from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { LayoutDashboard, MessageSquare, User, Bike, ChevronRight, Settings } from 'lucide-react';
+import { LayoutDashboard, User, Bike, ChevronRight, Settings } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import '../styles/DashboardLayout.css';
 
@@ -60,10 +60,6 @@ const DashboardLayout: React.FC = () => {
                         <LayoutDashboard size={20} />
                         <span>Overview</span>
                     </NavLink>
-                    <NavLink to="/chatbot" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-                        <MessageSquare size={20} />
-                        <span>AI Coach</span>
-                    </NavLink>
                     <NavLink to={garageTarget} className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
                         <Bike size={20} />
                         <span>My Garage</span>
@@ -88,17 +84,17 @@ const DashboardLayout: React.FC = () => {
             <main className="dashboard-content">
                 <header className="top-bar">
                     <h1 className="page-title">{getPageTitle(location.pathname)}</h1>
-                    <div className="user-profile" onClick={() => navigate('/settings')} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div className="user-profile" onClick={() => navigate('/settings')} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <span>{user?.full_name || user?.email || 'Rider'}</span>
                         {user?.profile_picture_url ? (
                             <img
                                 src={getAvatarUrl(user.profile_picture_url)!}
                                 alt="Profile"
-                                style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--accent-primary)' }}
+                                style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--accent-primary)' }}
                             />
                         ) : (
-                            <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#333', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <User size={16} />
+                            <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#333', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <User size={17} />
                             </div>
                         )}
                     </div>

@@ -283,7 +283,17 @@ export default function TimeSeriesChatPage() {
             // provider/model from explicit selectors; fall back to persona
             const resolvedProvider = selectedProviderId || activePersona?.providerId || undefined;
             const resolvedModel = selectedModel || activePersona?.modelId || undefined;
-            const apiKey = activePersona?.apiKey || localStorage.getItem(`apikey_${resolvedProvider}`) || undefined;
+            
+            // Read global provider API keys from Settings page
+            let globalApiKeys: Record<string, string> = {};
+            try {
+                const storedKeys = localStorage.getItem('ts_api_keys');
+                if (storedKeys) globalApiKeys = JSON.parse(storedKeys);
+            } catch (e) {
+                console.error("Failed to parse ts_api_keys");
+            }
+            
+            const apiKey = activePersona?.apiKey || (resolvedProvider ? globalApiKeys[resolvedProvider] : undefined) || undefined;
 
             const response = await ridesApi.chatWithTelemetry(id, {
                 prompt: userQuery,

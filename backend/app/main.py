@@ -27,6 +27,12 @@ def _ensure_ride_schema_columns() -> None:
         if 'visibility' not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE rides ADD COLUMN visibility VARCHAR DEFAULT 'private'"))
+        if 'analysis_blob' not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE rides ADD COLUMN analysis_blob JSON"))
+        if 'analysis_updated_at' not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE rides ADD COLUMN analysis_updated_at DATETIME"))
 
         with engine.begin() as conn:
             conn.execute(text("UPDATE rides SET visibility = 'private' WHERE visibility IS NULL OR visibility = ''"))

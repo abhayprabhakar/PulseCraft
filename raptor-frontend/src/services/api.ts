@@ -96,6 +96,9 @@ export const authApi = {
     getStats: async (): Promise<UserStats> => {
         const response = await api.get('/api/v1/auth/users/me/stats');
         return response.data;
+    },
+    deleteAccount: async (): Promise<void> => {
+        await api.delete('/api/v1/auth/me');
     }
 };
 
@@ -168,6 +171,11 @@ export interface RideAnalysis {
         strengths: string[];
         weaknesses: string[];
         drills: string[];
+        llm_enhanced?: boolean;
+        source?: string;
+        llm_provider?: string;
+        llm_model?: string;
+        llm_note?: string;
     };
     summary: string;
 }
@@ -280,8 +288,9 @@ export const ridesApi = {
         return response.data;
     },
 
-    getAnalysis: async (rideId: string): Promise<RideAnalysis> => {
-        const response = await api.get(`/api/v1/rides/${rideId}/analysis`);
+    getAnalysis: async (rideId: string, options?: { forceRefresh?: boolean }): Promise<RideAnalysis> => {
+        const params = options?.forceRefresh ? { force_refresh: true } : {};
+        const response = await api.get(`/api/v1/rides/${rideId}/analysis`, { params });
         return response.data;
     },
 

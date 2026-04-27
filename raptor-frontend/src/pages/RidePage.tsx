@@ -7,7 +7,7 @@ import {
 } from 'recharts';
 import { MapContainer, TileLayer, Polyline, CircleMarker, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Activity, Zap, Shield, Map as MapIcon, Gauge, AlertTriangle } from 'lucide-react';
+import { Activity, Shield, Map as MapIcon, Gauge, AlertTriangle } from 'lucide-react';
 import { ridesApi, RideAnalysis, AiPersona, LlmProviderOption } from '../services/api';
 import AnalysisMap from '../components/Map/AnalysisMap';
 import GearUsageChart from '../components/analytics/GearUsageChart';
@@ -363,6 +363,7 @@ function TelemetryMap({ telemetryData, timeRange, pinnedPoint, hoveredPoint, map
 function AnalysisTab({ rideId }: { rideId: string }) {
     const [analysis, setAnalysis] = useState<RideAnalysis | null>(null);
     const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [showRawData, setShowRawData] = useState(false);
     const [rawData, setRawData] = useState<any[] | null>(null);
@@ -403,6 +404,19 @@ function AnalysisTab({ rideId }: { rideId: string }) {
             .catch(() => setError('Failed to load analysis data.'))
             .finally(() => setLoading(false));
     }, [rideId]);
+
+    const handleRefreshAnalysis = async () => {
+        setRefreshing(true);
+        try {
+            const refreshed = await ridesApi.getAnalysis(rideId, { forceRefresh: true });
+            setAnalysis(refreshed);
+            setError(null);
+        } catch {
+            setError('Failed to recalculate analysis data.');
+        } finally {
+            setRefreshing(false);
+        }
+    };
 
     const handleEventClick = useCallback((evt: AnalysisEventData) => {
         setSelectedEventTimestamp(evt.timestamp);
@@ -516,7 +530,14 @@ function AnalysisTab({ rideId }: { rideId: string }) {
         document.body.appendChild(a); a.click(); a.remove();
     };
 
-    if (loading) return <div className="rp-center-msg">Loading Analytics...</div>;
+    if (loading) {
+        return (
+            <div className="rp-center-msg rp-analysis-loading">
+                <RefreshCcw size={24} className="ts-icon-spin" />
+                <span>Building ride analytics cockpit...</span>
+            </div>
+        );
+    }
     if (error) return <div className="rp-center-msg error">{error}</div>;
     if (!analysis) return <div className="rp-center-msg">No ride data found.</div>;
 
@@ -577,101 +598,128 @@ function AnalysisTab({ rideId }: { rideId: string }) {
         ? throttleDelaySamples[Math.floor(throttleDelaySamples.length / 2)]
         : null;
 
+    const rawEstimatedTimeLoss = Math.max(0, Number(scorecards.estimated_time_loss_s ?? 0));
+    // Use a smooth logarithmic scale so large totals do not immediately collapse to 0.
+    const normalizedTimeLoss = Math.max(0, Math.min(100, Math.round(100 - Math.min(100, Math.log1p(rawEstimatedTimeLoss) * 18))));
+    const scoreRows = [
+        { label: 'Smoothness', value: Number(scorecards.smoothness_score ?? 0) },
+        { label: 'Efficiency', value: Number(scorecards.efficiency_score ?? 0) },
+        { label: 'Consistency', value: Number(scorecards.consistency_score ?? 0) },
+        { label: 'Risk Control', value: 100 - Number(scorecards.risk_index ?? 0) },
+        { label: 'Time-Loss Control', value: normalizedTimeLoss },
+    ].map((row) => ({
+        ...row,
+        value: Math.max(0, Math.min(100, Math.round(row.value))),
+    }));
+
     return (
-        <div className="rp-analysis-tab">
-            <div className="rp-tab-actions">
-                <button className="rp-btn-secondary" onClick={handleViewRawData}>View Raw Data</button>
-            </div>
+        <div className="ra-shell">
+            <section className="ra-topbar">
+                <span className="ra-topbar-label">Telemetry racecraft intelligence</span>
+                <div className="ra-topbar-actions">
+                    <button className="ra-btn" onClick={handleRefreshAnalysis} disabled={refreshing}>
+                        <RefreshCcw size={15} className={refreshing ? 'ts-icon-spin' : ''} style={{ marginRight: '0.42rem' }} />
+                        {refreshing ? 'Recalculating...' : 'Refresh Analysis'}
+                    </button>
+                    <button className="ra-btn" onClick={handleViewRawData}>View Raw Data</button>
+                </div>
+            </section>
 
-            <div className="rp-analysis-hero">
-                <section className="rp-hero-main">
-                    <div className="rp-hero-headline-row">
-                        <div>
-                            <div className="rp-hero-eyebrow">MotoGP Performance Brief</div>
-                            <h3>Racecraft Snapshot</h3>
-                        </div>
-                        <div className="rp-hero-header-right">
-                            <div className="rp-hero-pace">
-                                <span>PACE INDEX</span>
-                                <strong>{paceIndex ?? '—'}</strong>
-                            </div>
-                            <span className="rp-hero-mode">{sessionMode}</span>
-                        </div>
-                    </div>
+            <section className="ra-hero">
+                <div className="ra-hero-copy">
+                    <span className="ra-eyebrow">RIDE PERFORMANCE DECK</span>
+                    <h3>Racecraft Diagnostic</h3>
                     <p>{analysis.summary || 'Telemetry summary unavailable for this ride.'}</p>
-                </section>
-            </div>
+                </div>
+                <div className="ra-hero-stats">
+                    <article className="ra-hero-chip">
+                        <span>Pace Index</span>
+                        <strong>{paceIndex ?? '—'}</strong>
+                    </article>
+                    <article className="ra-hero-chip">
+                        <span>Risk Index</span>
+                        <strong>{Math.round(scorecards.risk_index ?? 0)}</strong>
+                    </article>
+                    <div className="ra-hero-mode">{sessionMode}</div>
+                </div>
+            </section>
 
-            <div className="rp-metrics-grid">
-                {[
-                    { icon: <Shield />, color: 'blue', label: 'Smoothness', value: scorecards.smoothness_score ?? '–', unit: '/100', desc: 'Speed/throttle transition quality.' },
-                    { icon: <Zap />, color: 'green', label: 'Efficiency', value: scorecards.efficiency_score ?? '–', unit: '/100', desc: 'Pace with reduced wasteful load.' },
-                    { icon: <Activity />, color: 'purple', label: 'Consistency', value: scorecards.consistency_score ?? '–', unit: '/100', desc: 'Repeatability through segments.' },
-                    { icon: <AlertTriangle />, color: 'orange', label: 'Risk Index', value: scorecards.risk_index ?? '–', unit: '/100', desc: 'Control risk from harsh inputs.' },
-                    { icon: <Gauge />, color: 'red', label: 'Est. Time Loss', value: (scorecards.estimated_time_loss_s ?? 0).toFixed(2), unit: 's', desc: 'Total delta vs best segment baseline.' },
-                ].map((m, i) => (
-                    <div key={i} className="stat-card">
-                        <div className={`icon-box ${m.color}`}>{m.icon}</div>
-                        <h3>{m.label}</h3>
-                        <div className="stat-value">{m.value} <span className="stat-unit">{m.unit}</span></div>
-                        <p className="stat-desc">{m.desc}</p>
+            <section className="ra-priority-row">
+                <article className="ra-panel">
+                    <header className="ra-panel-head"><Shield size={18} /><h4>Scoreboard</h4></header>
+                    <div className="ra-scoreboard">
+                        {scoreRows.map((row) => (
+                            <div key={row.label} className="ra-score-row">
+                                <div className="ra-score-row-head">
+                                    <span>{row.label}</span>
+                                    <strong>{row.value}</strong>
+                                </div>
+                                <div className="ra-score-track">
+                                    <div className="ra-score-fill" style={{ width: `${row.value}%` }} />
+                                </div>
+                            </div>
+                        ))}
                     </div>
-                ))}
-            </div>
+                </article>
 
-            <div className="rp-insights-grid">
-                <div className="rp-insight-card">
-                    <div className="rp-insight-label">Biggest Time Leak</div>
-                    <div className="rp-insight-value">{worstSegment ? `${worstSegment.segment_id} · +${(worstSegment.time_delta_vs_best_s || 0).toFixed(2)}s` : 'N/A'}</div>
-                    <div className="rp-insight-note">Primary issue: {formatIssueLabel(worstSegment?.primary_issue)}</div>
-                </div>
-                <div className="rp-insight-card">
-                    <div className="rp-insight-label">Risk Hotspot</div>
-                    <div className="rp-insight-value">{riskHotspotSegment ? `${riskHotspotSegment.segment_id} · ${Math.round(riskHotspotSegment.risk_score_0_100 || 0)}/100` : 'N/A'}</div>
-                    <div className="rp-insight-note">Peak decel: {riskHotspotSegment ? `${(riskHotspotSegment.peak_decel_mps2 || 0).toFixed(2)} m/s²` : 'N/A'}</div>
-                </div>
-                <div className="rp-insight-card">
-                    <div className="rp-insight-label">Throttle Discipline</div>
-                    <div className="rp-insight-value">{throttleDelayMedianMs !== null ? `${Math.round(throttleDelayMedianMs)} ms median delay` : 'N/A'}</div>
-                    <div className="rp-insight-note">Computed from corner-like segments only; lower delay improves corner exit drive and lap consistency.</div>
-                </div>
-                <div className="rp-insight-card">
-                    <div className="rp-insight-label">Coaching Priority</div>
-                    <div className="rp-insight-value">{coaching?.drills?.[0] || coaching?.weaknesses?.[0] || 'Maintain smooth throttle-to-brake transitions'}</div>
-                    <div className="rp-insight-note">Focus this first in your next session to reduce total time loss.</div>
-                </div>
-            </div>
+                <article className="ra-panel">
+                    <header className="ra-panel-head"><AlertTriangle size={18} /><h4>Race Notes</h4></header>
+                    <div className="ra-notes">
+                        <div className="ra-note-card">
+                            <span>Biggest Time Leak</span>
+                            <strong>{worstSegment ? `${worstSegment.segment_id} · +${(worstSegment.time_delta_vs_best_s || 0).toFixed(2)}s` : 'N/A'}</strong>
+                            <p>Primary issue: {formatIssueLabel(worstSegment?.primary_issue)}</p>
+                        </div>
+                        <div className="ra-note-card">
+                            <span>Risk Hotspot</span>
+                            <strong>{riskHotspotSegment ? `${riskHotspotSegment.segment_id} · ${Math.round(riskHotspotSegment.risk_score_0_100 || 0)}/100` : 'N/A'}</strong>
+                            <p>Peak decel: {riskHotspotSegment ? `${(riskHotspotSegment.peak_decel_mps2 || 0).toFixed(2)} m/s²` : 'N/A'}</p>
+                        </div>
+                        <div className="ra-note-card">
+                            <span>Throttle Discipline</span>
+                            <strong>{throttleDelayMedianMs !== null ? `${Math.round(throttleDelayMedianMs)} ms median delay` : 'N/A'}</strong>
+                            <p>Lower delay improves corner exit drive and lap consistency.</p>
+                        </div>
+                    </div>
+                </article>
+            </section>
 
-            <div className="rp-charts-container">
-                <div className="rp-map-column">
-                    <div className="chart-card map-card map-card-sticky">
-                        <div className="card-header"><MapIcon size={18} /><h3>Track Map (Speed Gradient)</h3></div>
+            <section className="ra-analysis-row">
+                <div className="ra-map-column">
+                    <article className="ra-panel ra-map-panel ra-map-sticky">
+                        <header className="ra-panel-head"><MapIcon size={18} /><h4>Track Map</h4></header>
                         <AnalysisMap segments={analysis.map_segments || []} focusedPoint={focusedEventPoint} />
-                    </div>
+                    </article>
                 </div>
-                <div className="rp-analytics-column" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                    <div className="chart-card">
-                        <div className="card-header"><Activity size={18} /><h3>Event Timeline</h3></div>
+
+                <div className="ra-analysis-stack">
+                    <article className="ra-panel ra-timeline-panel">
+                        <header className="ra-panel-head"><Activity size={18} /><h4>Event Timeline</h4></header>
                         <EventTimeline
                             events={events}
                             onEventClick={handleEventClick}
                             selectedEventTimestamp={selectedEventTimestamp}
                         />
-                    </div>
-                    <div className="chart-card">
-                        <div className="card-header"><Gauge size={18} /><h3>Gear Usage Distribution</h3></div>
+                    </article>
+
+                    <article className="ra-panel">
+                        <header className="ra-panel-head"><Gauge size={18} /><h4>Gear Usage</h4></header>
                         <GearUsageChart data={metrics.gear_analytics || []} />
-                    </div>
-                    <div className="chart-card">
-                        <div className="card-header"><BarChart2 size={18} /><h3>Top Segment Time Loss</h3></div>
+                    </article>
+
+                    <article className="ra-panel">
+                        <header className="ra-panel-head"><BarChart2 size={18} /><h4>Segment Time Loss</h4></header>
                         <SegmentLeaderboard segments={segmentAnalytics} />
-                    </div>
-                    <div className="chart-card">
-                        <div className="card-header"><Cpu size={18} /><h3>AI Coaching Plan</h3></div>
-                        <CoachingPanel coaching={coaching} />
-                    </div>
+                    </article>
                 </div>
-            </div>
+            </section>
+
+            <section className="ra-coaching-row">
+                <article className="ra-panel ra-coaching-panel">
+                    <header className="ra-panel-head"><Cpu size={18} /><h4>Coaching Plan</h4></header>
+                    <CoachingPanel coaching={coaching} />
+                </article>
+            </section>
 
             {showRawData && (
                 <div className="modal-overlay" onClick={() => setShowRawData(false)}>
@@ -966,7 +1014,18 @@ function TimeSeriesTab({ rideId }: { rideId: string }) {
             const lowQuotaMode = localStorage.getItem('low_quota_mode') === '1';
             const resolvedProvider = selectedProviderId || activePersona?.providerId || undefined;
             const resolvedModel = selectedModel || activePersona?.modelId || undefined;
-            const apiKey = activePersona?.apiKey || undefined;
+            
+            // Read global provider API keys from Settings page
+            let globalApiKeys: Record<string, string> = {};
+            try {
+                const storedKeys = localStorage.getItem('ts_api_keys');
+                if (storedKeys) globalApiKeys = JSON.parse(storedKeys);
+            } catch (e) {
+                console.error("Failed to parse ts_api_keys");
+            }
+            
+            const apiKey = activePersona?.apiKey || (resolvedProvider ? globalApiKeys[resolvedProvider] : undefined) || undefined;
+            
             const res = await ridesApi.chatWithTelemetry(rideId, {
                 prompt: promptWithContext,
                 start_time_ms: startMs,
@@ -1542,20 +1601,29 @@ export default function RidePage() {
 
             <style>{`
                 .rp-shell { display:flex; flex-direction:column; height:100vh; width:100vw; position:fixed; top:0; left:0; overflow:hidden; background:var(--bg-primary); color:var(--text-primary); z-index:100; }
-                .rp-header { flex:none; display:flex; align-items:center; gap:1rem; padding:0.75rem 1.5rem; border-bottom:1px solid var(--border-color); background:var(--bg-secondary); }
+                .rp-header {
+                    flex: none;
+                    display: flex;
+                    align-items: center;
+                    gap: 1rem;
+                    padding: 0.9rem 1.55rem;
+                    border-bottom: 1px solid rgba(255,255,255,0.08);
+                    background: linear-gradient(90deg, rgba(17,17,20,0.96), rgba(19,18,18,0.92));
+                    backdrop-filter: blur(12px);
+                }
                 .rp-back-btn { background:none; border:none; color:var(--text-muted); cursor:pointer; padding:0.4rem; border-radius:8px; display:flex; align-items:center; transition:all 0.2s; }
                 .rp-back-btn:hover { background:var(--bg-card); color:var(--text-primary); }
                 .rp-title-area { flex:1; min-width:0; }
-                .rp-title { margin:0; font-size:1rem; font-weight:600; color:var(--text-primary); }
+                .rp-title { margin:0; font-size:1.2rem; font-weight:700; color:var(--text-primary); letter-spacing:0.02em; }
                 .rp-title-editable { cursor:pointer; display:inline-flex; align-items:center; gap:0.4rem; border-radius:5px; padding:0.15rem 0.4rem; transition:background 0.15s; }
                 .rp-title-editable:hover { background:rgba(255,255,255,0.06); }
                 .rp-title-pencil { font-style:normal; font-size:0.75rem; color:var(--text-muted); opacity:0; transition:opacity 0.15s; }
                 .rp-title-editable:hover .rp-title-pencil { opacity:1; }
                 .rp-title-input { background:var(--bg-card); border:1px solid var(--accent-primary); color:var(--text-primary); font-size:1rem; font-weight:600; padding:0.15rem 0.5rem; border-radius:6px; outline:none; width:min(400px,60vw); }
                 .rp-title-input:disabled { opacity:0.6; }
-                .rp-tabs { display:flex; gap:4px; background:var(--bg-card); padding:4px; border-radius:10px; border:1px solid var(--border-color); }
-                .rp-tab { display:flex; align-items:center; gap:6px; padding:0.4rem 0.9rem; border:none; border-radius:7px; background:transparent; color:var(--text-muted); cursor:pointer; font-size:0.82rem; font-weight:500; transition:all 0.2s; }
-                .rp-tab.active { background:var(--accent-primary); color:white; }
+                .rp-tabs { display:flex; gap:4px; background:rgba(255,255,255,0.02); padding:4px; border-radius:11px; border:1px solid rgba(255,255,255,0.1); }
+                .rp-tab { display:flex; align-items:center; gap:6px; padding:0.5rem 1.05rem; border:none; border-radius:8px; background:transparent; color:var(--text-muted); cursor:pointer; font-size:0.9rem; font-weight:600; transition:all 0.2s; }
+                .rp-tab.active { background:linear-gradient(135deg, #dc0000, #a90000); color:white; box-shadow:0 4px 12px rgba(220,0,0,0.35); }
                 .rp-tab:not(.active):hover { background:var(--bg-secondary); color:var(--text-primary); }
                 .rp-content { flex:1; overflow:hidden; display:flex; flex-direction:column; }
                 .rp-scroll-wrapper { flex:1; overflow-y:auto; overflow-x:hidden; position:relative; }
@@ -1563,49 +1631,292 @@ export default function RidePage() {
                 /* ---- Analysis tab styles ---- */
                 .rp-center-msg { display:flex; flex-direction:column; align-items:center; justify-content:center; height:200px; color:var(--text-muted); gap:0.5rem; }
                 .rp-center-msg.error { color:#ef4444; }
-                .rp-tab-actions { display:flex; justify-content:flex-end; padding:1rem 0 0.5rem; }
-                .rp-btn-secondary { background:var(--bg-card); border:1px solid var(--border-color); padding:0.45rem 1rem; border-radius:6px; color:var(--text-secondary); cursor:pointer; font-size:0.85rem; transition:all 0.2s; }
-                .rp-btn-secondary:hover { border-color:var(--accent-primary); color:var(--accent-primary); }
-                .rp-analysis-tab { padding:1.5rem; display:grid; gap:0; max-width:1640px; margin:0 auto; }
-                .rp-analysis-hero { display:flex; flex-direction:column; margin-bottom:2rem; }
-                .rp-hero-main { background:linear-gradient(135deg, var(--bg-card) 0%, var(--bg-secondary) 100%); border:1px solid var(--border-color); border-radius:12px; padding:1.5rem 1.8rem; position:relative; overflow:hidden; }
-                .rp-hero-main::after { content:''; position:absolute; inset:auto 0 0 0; height:3px; background:var(--accent-primary); opacity:0.8; }
-                .rp-hero-eyebrow { font-size:0.75rem; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-muted); margin-bottom:0.4rem; font-weight:600; }
-                .rp-hero-headline-row { display:flex; justify-content:space-between; align-items:flex-start; gap:1.5rem; margin-bottom:1.2rem; }
-                .rp-hero-header-right { display:flex; align-items:center; gap:1.5rem; }
-                .rp-hero-main h3 { margin:0; color:var(--text-primary); font-size:1.4rem; font-weight:700; }
-                .rp-hero-pace { display:flex; flex-direction:column; align-items:flex-end; }
-                .rp-hero-pace span { font-size:0.65rem; letter-spacing:0.1em; color:var(--text-muted); text-transform:uppercase; font-weight:600; }
-                .rp-hero-pace strong { font-size:1.8rem; line-height:1.1; font-weight:800; color:var(--text-primary); }
-                .rp-hero-mode { font-size:0.8rem; font-weight:600; text-transform:uppercase; letter-spacing:0.1em; color:var(--accent-primary); border:1px solid var(--accent-primary); border-radius:999px; padding:0.4rem 1rem; background:rgba(255,255,255,0.02); white-space:nowrap; }
-                .rp-hero-main p { margin:0; color:var(--text-secondary); font-size:0.95rem; line-height:1.6; max-width:85%; }
-                .rp-hero-tags { display:flex; flex-wrap:wrap; gap:0.6rem; margin-top:1.5rem; }
-                .rp-hero-tag { font-size:0.75rem; font-weight:500; color:var(--text-secondary); background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:6px; padding:0.3rem 0.75rem; }
-                .rp-metrics-grid { display:grid; grid-template-columns:repeat(5, minmax(180px, 1fr)); gap:1.5rem; margin-bottom:2.5rem; }
-                .rp-insights-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:1.25rem; margin-bottom:2.5rem; }
-                .rp-insight-card { position:relative; background:linear-gradient(180deg, var(--bg-card) 0%, var(--bg-secondary) 130%); border:1px solid var(--border-color); border-radius:12px; padding:0.9rem 1rem; display:grid; gap:0.35rem; overflow:hidden; }
-                .rp-insight-card::before { content:''; position:absolute; left:0; top:0; bottom:0; width:2px; background:var(--accent-primary); opacity:0.95; }
-                .rp-insight-label { font-size:0.7rem; text-transform:uppercase; letter-spacing:0.04em; color:var(--text-muted); }
-                .rp-insight-value { font-size:0.98rem; color:var(--text-primary); font-weight:600; line-height:1.35; }
-                .rp-insight-note { font-size:0.78rem; color:var(--text-secondary); line-height:1.45; }
-                .rp-charts-container { display:grid; grid-template-columns:2fr 1.5fr; gap:1.5rem; align-items:start; }
-                .rp-map-column { align-self:start; position:sticky; top:1rem; }
-                .rp-analytics-column { min-width:0; }
-                .rp-metrics-grid .stat-card, .rp-charts-container .chart-card, .rp-insight-card, .rp-hero-main { transition:border-color 0.2s ease, transform 0.2s ease; }
-                .rp-metrics-grid .stat-card:hover, .rp-charts-container .chart-card:hover, .rp-insight-card:hover, .rp-hero-main:hover { border-color:var(--accent-primary); transform:translateY(-1px); }
-                @media(max-width:1300px){ .rp-insights-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .rp-metrics-grid { grid-template-columns:repeat(3, minmax(180px, 1fr)); } }
-                @media(max-width:1200px){ .rp-charts-container { grid-template-columns:1fr; } .rp-hero-header-right { flex-direction: column; align-items:flex-end; gap: 0.5rem; } }
-                @media(max-width:760px){ .rp-insights-grid { grid-template-columns:1fr; } .rp-metrics-grid { grid-template-columns:repeat(2, minmax(140px, 1fr)); } .rp-hero-header-right { align-items: flex-start; } }
-                @media(max-width:480px){ .rp-metrics-grid { grid-template-columns:1fr; } }
-                .icon-box { width:38px;height:38px;border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:0.75rem; }
-                .icon-box.red{background:rgba(220,0,0,0.2);color:#dc0000;} .icon-box.orange{background:rgba(255,165,0,0.2);color:orange;} .icon-box.blue{background:rgba(0,100,255,0.2);color:#0064ff;} .icon-box.green{background:rgba(0,200,100,0.2);color:#00c864;} .icon-box.purple{background:rgba(150,0,255,0.2);color:#9600ff;}
-                .stat-desc { font-size:0.78rem; color:var(--text-muted); margin-top:0.4rem; }
-                .chart-card{background:var(--bg-card);padding:1.5rem;border-radius:12px;border:1px solid var(--border-color);display:flex;flex-direction:column;}
-                .map-card{min-height:420px;}
-                .map-card-sticky{position:relative;top:auto;height:calc(100vh - 8.5rem);max-height:calc(100vh - 8.5rem);overflow:hidden;}
-                .map-card-sticky .analysis-map-container{height:calc(100vh - 12.5rem) !important;}
-                .card-header{display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem;color:var(--text-secondary);border-bottom:1px solid var(--border-color);padding-bottom:0.75rem;}
-                @media(max-width:1200px){ .rp-map-column{position:relative;top:0;} .map-card-sticky{position:relative;top:0;height:auto;max-height:none;} .map-card-sticky .analysis-map-container{height:400px !important;} }
+                .rp-analysis-loading { min-height:52vh; font-size:0.95rem; letter-spacing:0.02em; }
+                .ra-shell {
+                    --ra-surface-1: rgba(255,255,255,0.05);
+                    --ra-surface-2: rgba(255,255,255,0.015);
+                    --ra-border: rgba(255,255,255,0.09);
+                    --ra-text-soft: #a1a1aa;
+                    --ra-text-muted: #7b7b86;
+                    padding: 1.6rem 1.8rem 2rem;
+                    max-width: 1680px;
+                    margin: 0 auto;
+                    display: grid;
+                    gap: 1rem;
+                }
+                .ra-topbar {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    gap: 0.8rem;
+                }
+                .ra-topbar-label {
+                    font-size: 0.9rem;
+                    letter-spacing: 0.13em;
+                    text-transform: uppercase;
+                    color: var(--ra-text-soft);
+                    font-weight: 700;
+                }
+                .ra-topbar-actions {
+                    display: inline-flex;
+                    gap: 0.5rem;
+                    flex-wrap: wrap;
+                }
+                .ra-btn {
+                    border: 1px solid var(--ra-border);
+                    background: linear-gradient(160deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01));
+                    color: #dadade;
+                    border-radius: 10px;
+                    font-size: 0.98rem;
+                    font-weight: 600;
+                    padding: 0.62rem 1.1rem;
+                    cursor: pointer;
+                    display: inline-flex;
+                    align-items: center;
+                    transition: border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+                }
+                .ra-btn:hover { border-color: rgba(220,0,0,0.45); color: #fff; transform: translateY(-1px); }
+                .ra-btn:disabled { opacity: 0.65; cursor: not-allowed; transform: none; }
+
+                .ra-hero {
+                    border-radius: 18px;
+                    border: 1px solid var(--ra-border);
+                    padding: 1.4rem 1.55rem;
+                    background:
+                        radial-gradient(120% 140% at 100% 0%, rgba(220,0,0,0.23) 0%, rgba(220,0,0,0.08) 30%, transparent 65%),
+                        linear-gradient(145deg, rgba(11,11,14,0.96), rgba(17,12,12,0.98));
+                    box-shadow: 0 14px 34px rgba(0,0,0,0.34), inset 0 1px 0 rgba(255,255,255,0.07);
+                    display: grid;
+                    grid-template-columns: minmax(0, 1fr) auto;
+                    gap: 1rem;
+                    align-items: center;
+                }
+                .ra-eyebrow {
+                    font-size: 0.84rem;
+                    letter-spacing: 0.15em;
+                    text-transform: uppercase;
+                    color: var(--ra-text-soft);
+                    font-weight: 700;
+                    margin-bottom: 0.35rem;
+                    display: inline-block;
+                }
+                .ra-hero-copy h3 {
+                    margin: 0;
+                    font-size: 2.25rem;
+                    line-height: 1.1;
+                    font-weight: 700;
+                    color: #f7f7f8;
+                }
+                .ra-hero-copy p {
+                    margin: 0.78rem 0 0;
+                    color: #b6b6c1;
+                    font-size: 1.14rem;
+                    max-width: 72ch;
+                }
+                .ra-hero-stats {
+                    display: grid;
+                    gap: 0.45rem;
+                    justify-items: end;
+                }
+                .ra-hero-chip {
+                    min-width: 130px;
+                    border: 1px solid rgba(255,255,255,0.12);
+                    border-radius: 11px;
+                    padding: 0.45rem 0.68rem;
+                    background: rgba(0,0,0,0.22);
+                    text-align: right;
+                }
+                .ra-hero-chip span {
+                    display: block;
+                    font-size: 0.78rem;
+                    letter-spacing: 0.14em;
+                    text-transform: uppercase;
+                    color: var(--ra-text-soft);
+                    font-weight: 700;
+                }
+                .ra-hero-chip strong {
+                    display: block;
+                    margin-top: 0.12rem;
+                    font-size: 1.7rem;
+                    color: #fff;
+                    line-height: 1;
+                    font-weight: 800;
+                }
+                .ra-hero-mode {
+                    border: 1px solid rgba(220,0,0,0.58);
+                    color: #fecaca;
+                    background: rgba(220,0,0,0.15);
+                    border-radius: 999px;
+                    padding: 0.4rem 0.92rem;
+                    font-size: 0.9rem;
+                    text-transform: uppercase;
+                    letter-spacing: 0.14em;
+                    font-weight: 700;
+                }
+
+                .ra-priority-row {
+                    display: grid;
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                    gap: 1.05rem;
+                    align-items: start;
+                }
+                .ra-analysis-row {
+                    display: grid;
+                    grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr);
+                    gap: 1.05rem;
+                    align-items: stretch;
+                }
+                .ra-map-column {
+                    min-width: 0;
+                    align-self: stretch;
+                    position: relative;
+                }
+                .ra-analysis-stack {
+                    display: grid;
+                    gap: 1.05rem;
+                    min-width: 0;
+                }
+                .ra-panel {
+                    border: 1px solid var(--ra-border);
+                    border-radius: 14px;
+                    background: linear-gradient(168deg, var(--ra-surface-1), var(--ra-surface-2));
+                    box-shadow: 0 10px 26px rgba(0,0,0,0.28);
+                    padding: 1.05rem 1.08rem;
+                    min-width: 0;
+                }
+                .ra-panel-head {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.5rem;
+                    border-bottom: 1px solid rgba(255,255,255,0.08);
+                    padding-bottom: 0.68rem;
+                    margin-bottom: 0.82rem;
+                    color: #d8d8df;
+                }
+                .ra-panel-head h4 {
+                    margin: 0;
+                    font-size: 1.07rem;
+                    text-transform: uppercase;
+                    letter-spacing: 0.12em;
+                    color: #e4e4e8;
+                    font-weight: 700;
+                }
+                .ra-map-panel .analysis-map-container {
+                    height: min(74vh, 620px) !important;
+                    border-radius: 10px;
+                    overflow: hidden;
+                }
+                .ra-map-sticky {
+                    position: sticky;
+                    top: 1rem;
+                }
+                .ra-timeline-panel {
+                    min-height: 548px;
+                }
+
+                .ra-scoreboard {
+                    display: grid;
+                    gap: 0.6rem;
+                }
+                .ra-score-row {
+                    display: grid;
+                    gap: 0.34rem;
+                }
+                .ra-score-row-head {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: baseline;
+                    gap: 0.5rem;
+                    color: #d8d8de;
+                    font-size: 0.98rem;
+                    font-weight: 600;
+                }
+                .ra-score-row-head strong { font-size: 1.14rem; color: #fff; }
+                .ra-score-track {
+                    height: 7px;
+                    border-radius: 999px;
+                    background: rgba(0,0,0,0.35);
+                    overflow: hidden;
+                    border: 1px solid rgba(255,255,255,0.08);
+                }
+                .ra-score-fill {
+                    height: 100%;
+                    background: linear-gradient(90deg, rgba(220,0,0,0.7), #ff2b2b);
+                    border-radius: 999px;
+                }
+
+                .ra-notes {
+                    display: grid;
+                    gap: 0.55rem;
+                }
+                .ra-note-card {
+                    border: 1px solid rgba(255,255,255,0.08);
+                    border-radius: 11px;
+                    background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01));
+                    padding: 0.72rem 0.78rem;
+                    display: grid;
+                    gap: 0.26rem;
+                }
+                .ra-note-card span {
+                    color: var(--ra-text-soft);
+                    font-size: 0.78rem;
+                    text-transform: uppercase;
+                    letter-spacing: 0.12em;
+                    font-weight: 700;
+                }
+                .ra-note-card strong {
+                    font-size: 1.2rem;
+                    color: #f5f5f7;
+                    line-height: 1.25;
+                }
+                .ra-note-card p {
+                    margin: 0;
+                    color: #9aa0aa;
+                    font-size: 0.94rem;
+                    line-height: 1.32;
+                }
+
+                .ra-coaching-row {
+                    margin-top: 1.05rem;
+                }
+                .ra-coaching-panel {
+                    padding-top: 1.12rem;
+                }
+
+                .icon-box {
+                    width: 38px;
+                    height: 38px;
+                    border-radius: 11px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    margin-bottom: 0.22rem;
+                    border: 1px solid rgba(255,255,255,0.08);
+                }
+                .icon-box.red { background: rgba(220,0,0,0.22); color: #ff5c5c; }
+                .icon-box.orange { background: rgba(255,149,0,0.19); color: #ffb34d; }
+                .icon-box.blue { background: rgba(42,104,255,0.2); color: #6ba6ff; }
+                .icon-box.green { background: rgba(34,197,94,0.2); color: #6ee7a4; }
+                .icon-box.purple { background: rgba(42,104,255,0.2); color: #6ba6ff; }
+
+                @media (max-width: 1200px) {
+                    .ra-priority-row { grid-template-columns: 1fr; }
+                    .ra-analysis-row { grid-template-columns: 1fr; }
+                    .ra-hero { grid-template-columns: 1fr; }
+                    .ra-hero-stats { justify-items: start; }
+                    .ra-coaching-row { margin-top: 0.85rem; }
+                    .ra-map-sticky { position: relative; top: 0; }
+                }
+                @media (max-width: 900px) {
+                    .ra-shell { padding: 1rem; }
+                    .ra-topbar { flex-direction: column; align-items: flex-start; }
+                    .ra-metrics-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+                    .ra-map-panel .analysis-map-container { height: 420px !important; }
+                }
+                @media (max-width: 560px) {
+                    .ra-metrics-strip { grid-template-columns: 1fr; }
+                    .ra-map-panel .analysis-map-container { height: 320px !important; }
+                }
                 .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;z-index:1000;backdrop-filter:blur(4px);}
                 .modal-content{background:var(--bg-secondary);width:90%;max-width:1000px;height:80vh;border-radius:12px;border:1px solid var(--border-color);display:flex;flex-direction:column;overflow:hidden;}
                 .modal-header{padding:1.25rem;border-bottom:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center;}

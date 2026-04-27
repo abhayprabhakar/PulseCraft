@@ -1,16 +1,22 @@
 .dashboard-container {
     display: flex;
-    min-height: 100vh;
+    height: 100vh;
+    overflow: hidden;
     background-color: var(--bg-primary);
     color: var(--text-primary);
 }
 
 .sidebar {
     width: 250px;
-    background-color: var(--bg-secondary);
-    border-right: 1px solid var(--border-color);
+    flex-shrink: 0;
+    background-color: #0c0c0c;
+    border-right: 1px solid rgba(255,255,255,0.08);
     display: flex;
     flex-direction: column;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
 }
 
 .sidebar-header {
@@ -66,27 +72,37 @@
     flex: 1;
     display: flex;
     flex-direction: column;
+    height: 100vh;
     overflow-y: auto;
 }
 
 .top-bar {
-    height: 80px;
+    min-height: 104px;
     border-bottom: 1px solid var(--border-color);
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 2rem;
+    padding: 0.35rem 2.5rem;
     background-color: rgba(13, 13, 13, 0.8);
     backdrop-filter: blur(10px);
-    position: sticky;
-    top: 0;
-    z-index: 10;
 }
 
 .page-title {
     font-family: var(--font-heading);
-    font-size: 1.2rem;
+    font-size: 1.55rem;
+    letter-spacing: 0.4px;
     color: var(--text-primary);
+}
+
+@media (max-width: 900px) {
+    .top-bar {
+        min-height: 86px;
+        padding: 0 1.25rem;
+    }
+
+    .page-title {
+        font-size: 1.2rem;
+    }
 }
 
 .content-area {
@@ -96,8 +112,8 @@
 
 /* Common Card Styles */
 .stat-card {
-    background-color: var(--bg-card);
-    border: 1px solid var(--border-color);
+    background-color: #161616;
+    border: 1px solid rgba(255,255,255,0.08);
     padding: 1.5rem;
     border-radius: 12px;
     display: flex;

@@ -23,7 +23,7 @@ const EventTimeline: React.FC<Props> = ({
     if (!events || events.length === 0) {
         return (
             <div className="empty-events" style={{ textAlign: 'center', padding: '2rem', color: '#888' }}>
-                <p>Smooth riding! No harsh acceleration or braking events detected.</p>
+                <p style={{ fontSize: '1rem', margin: 0 }}>Smooth riding! No harsh acceleration or braking events detected.</p>
             </div>
         );
     }
@@ -32,18 +32,18 @@ const EventTimeline: React.FC<Props> = ({
     const sortedEvents = [...events].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
     return (
-        <div className="event-timeline" style={{ maxHeight: '400px', overflowY: 'auto' }}>
+        <div className="event-timeline" style={{ maxHeight: '460px', overflow: 'auto' }}>
             <div style={{
                 display: 'grid',
-                gridTemplateColumns: '84px 110px 92px 72px 94px',
-                gap: '0.5rem',
-                padding: '1rem 1rem 0.6rem 1rem',
+                gridTemplateColumns: '96px 126px 116px 78px 104px',
+                gap: '0.6rem',
+                padding: '1rem 1rem 0.72rem 1rem',
                 marginBottom: '0',
                 color: 'var(--text-muted)',
-                fontSize: '0.72rem',
+                fontSize: '0.82rem',
                 fontWeight: 700,
                 textTransform: 'uppercase',
-                letterSpacing: '0.04em',
+                letterSpacing: '0.07em',
                 borderBottom: '1px solid var(--border-color)',
                 position: 'sticky',
                 top: 0,
@@ -65,11 +65,11 @@ const EventTimeline: React.FC<Props> = ({
                 return (
                     <div key={idx} style={{
                         display: 'grid',
-                        gridTemplateColumns: '84px 110px 92px 72px 94px',
+                        gridTemplateColumns: '96px 126px 116px 78px 104px',
                         alignItems: 'center',
-                        gap: '0.5rem',
-                        padding: '0.8rem 1rem',
-                        borderBottom: '1px solid #333',
+                        gap: '0.6rem',
+                        padding: '0.9rem 1rem',
+                        borderBottom: '1px solid rgba(255,255,255,0.1)',
                         background: isSelected
                             ? 'rgba(245, 158, 11, 0.16)'
                             : (isBrake_c ? 'rgba(255, 0, 0, 0.05)' : 'rgba(0, 150, 255, 0.05)'),
@@ -78,23 +78,23 @@ const EventTimeline: React.FC<Props> = ({
                         boxShadow: isSelected ? 'inset 0 0 0 1px rgba(245, 158, 11, 0.65)' : 'none'
                     }}
                         onClick={() => onEventClick?.(evt)}>
-                        <div style={{ color: '#888', fontSize: '0.88rem' }}>
+                        <div style={{ color: '#aeb4bf', fontSize: '0.94rem' }}>
                             {timeStr}
                         </div>
                         <div style={{
-                            fontWeight: 'bold',
-                            fontSize: '0.9rem',
+                            fontWeight: 700,
+                            fontSize: '0.98rem',
                             color: isBrake_c ? '#ff4444' : '#44aaff'
                         }}>
                             {isBrake_c ? 'Hard Brake' : 'Hard Accel'}
                         </div>
-                        <div style={{ color: '#fff', fontSize: '0.9rem' }}>
+                        <div style={{ color: '#f3f4f6', fontSize: '0.96rem' }}>
                             {Math.abs(evt.magnitude_mps2).toFixed(2)} m/s²
                         </div>
-                        <div style={{ color: '#facc15', fontSize: '0.88rem', fontWeight: 600 }}>
+                        <div style={{ color: '#facc15', fontSize: '0.92rem', fontWeight: 700 }}>
                             {gForce.toFixed(2)}g
                         </div>
-                        <div style={{ color: '#d1d5db', fontSize: '0.88rem' }}>
+                        <div style={{ color: '#d1d5db', fontSize: '0.93rem' }}>
                             {Number(evt.speed_kph || 0).toFixed(1)} km/h
                         </div>
                     </div>

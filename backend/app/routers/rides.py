@@ -795,10 +795,10 @@ def _load_llm_provider_registry() -> Dict[str, Any]:
     providers: Dict[str, Dict[str, Any]] = {
         "gemini-default": {
             "id": "gemini-default",
-            "label": "Google Gemini (Default)",
+            "label": "Google AI (Gemini/Gemma)",
             "provider_type": "gemini",
             "default_model": default_model,
-            "models": [default_model, "gemini-2.5-pro", "gemini-2.0-flash-thinking-exp", "gemini-1.5-pro", "gemini-1.5-flash"],
+            "models": [default_model, "gemma-4-26b-a4b-it", "gemma-2-27b-it", "gemini-2.5-pro", "gemini-2.0-flash-thinking-exp", "gemini-1.5-pro", "gemini-1.5-flash"],
             "api_key_env": "GEMINI_API_KEY",
             "reasoning_supported": True,
             "enabled": True,
@@ -858,6 +858,18 @@ def _load_llm_provider_registry() -> Dict[str, Any]:
             "models": ["mistral-large-latest", "mistral-small-latest", "codestral-latest", "ministral-8b-latest", "ministral-3b-latest", "pixtral-large-latest", "pixtral-12b-2409"],
             "base_url": "https://api.mistral.ai/v1",
             "api_key_env": "MISTRAL_API_KEY",
+            "reasoning_supported": True,
+            "enabled": True,
+            "allow_custom_models": True,
+        },
+        "groq": {
+            "id": "groq",
+            "label": "Groq",
+            "provider_type": "openai",
+            "default_model": "llama-3.3-70b-versatile",
+            "models": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "gemma2-9b-it"],
+            "base_url": "https://api.groq.com/openai/v1",
+            "api_key_env": "GROQ_API_KEY",
             "reasoning_supported": True,
             "enabled": True,
             "allow_custom_models": True,
@@ -955,18 +967,18 @@ def _get_dynamic_models(provider: Dict[str, Any]) -> List[str]:
     try:
         if provider_type == "gemini":
             api_key_env = str(provider.get("api_key_env") or "GEMINI_API_KEY").strip() or "GEMINI_API_KEY"
-            api_key = os.getenv(api_key_env, "").strip()
+            api_key = str(provider.get("api_key") or os.getenv(api_key_env, "")).strip()
             if api_key:
                 client = genai.Client(api_key=api_key)
                 # fetch models
                 for m in client.models.list():
                     name = m.name.replace("models/", "")
-                    if name.startswith("gemini"):
+                    if name.startswith("gemini") or name.startswith("gemma"):
                         fetched_models.append(name)
         else:
             base_url = str(provider.get("base_url") or "").strip()
             api_key_env = str(provider.get("api_key_env") or "OPENAI_API_KEY").strip()
-            api_key = os.getenv(api_key_env, "").strip() if api_key_env else ""
+            api_key = str(provider.get("api_key") or os.getenv(api_key_env, "")).strip()
             
             if base_url and api_key:
                 url = base_url.rstrip("/") + "/models"
@@ -1118,7 +1130,7 @@ def _raise_llm_http_error(provider: Dict[str, Any], model_name: str, status_code
         status_code=502,
         detail={
             "code": "LLM_UPSTREAM_ERROR",
-            "user_message": "The selected LLM provider failed to generate a response. Please retry or choose another provider.",
+            "user_message": f"The selected LLM provider failed to generate a response. Please retry or choose another provider. Details: {str(raw_error)[:300]}",
             "provider": provider_id,
             "model": model_name,
             "raw_error": raw_error,
@@ -1141,7 +1153,7 @@ def _generate_text_with_provider(provider: Dict[str, Any], prompt: str) -> str:
 
     if provider_type == "gemini":
         api_key_env = str(provider.get("api_key_env") or "GEMINI_API_KEY").strip() or "GEMINI_API_KEY"
-        api_key = os.getenv(api_key_env, "").strip()
+        api_key = str(provider.get("api_key") or os.getenv(api_key_env, "")).strip()
         if not api_key:
             raise HTTPException(
                 status_code=503,
@@ -1162,10 +1174,18 @@ def _generate_text_with_provider(provider: Dict[str, Any], prompt: str) -> str:
         except Exception as exc:
             _raise_llm_http_error(provider, model_name, status_code=502, raw_error=str(exc))
 
+    # For all OpenAI-compatible providers:
     base_url = str(provider.get("base_url") or "").strip()
     api_key_env = str(provider.get("api_key_env") or "OPENAI_API_KEY").strip()
-    api_key = os.getenv(api_key_env, "").strip() if api_key_env else ""
-    chat_path = str(provider.get("chat_path") or "/chat/completions").strip() or "/chat/completions"
+    
+    # Look for the API key in the provider dictionary first (from frontend), then fall back to env 
+    api_key = str(provider.get("api_key") or os.getenv(api_key_env, "")).strip()
+    
+    chat_path = str(provider.get("chat_path") or "/chat/completions").strip()
+    # Default chat path missing from config should fallback to /chat/completions
+    if not chat_path:
+        chat_path = "/chat/completions"
+        
     timeout_seconds = float(provider.get("timeout_seconds") or 60)
 
     if not base_url:
@@ -3463,13 +3483,58 @@ def chat_with_telemetry(ride_id: str, payload: ChatRequest, db: Session = Depend
     )
         
     # Convert sliced subset to a concise CSV string with stable timing + gear context
+    # Prune redundant columns to save tokens
     context_cols = [
         col for col in [
-            'elapsed_s', 'elapsed_hms', 'speed_kph', 'rpm', 'throttle',
-            'gear_stable', 'gear', 'calculated_gear', 'coolant_temp_c'
+            'elapsed_hms', 'speed_kph', 'rpm', 'throttle',
+            'gear_stable', 'coolant_temp_c'
         ] if col in sliced_df.columns
     ]
-    csv_context = sliced_df[context_cols].to_csv(index=False)
+    
+    llm_df_context = sliced_df[context_cols].copy()
+    
+    # Round to reduce characters (e.g. 12.3456789 -> 12.3)
+    if 'speed_kph' in llm_df_context.columns:
+        llm_df_context['speed_kph'] = llm_df_context['speed_kph'].round(1)
+    if 'rpm' in llm_df_context.columns:
+        llm_df_context['rpm'] = llm_df_context['rpm'].round(0).astype('Int64')
+    if 'throttle' in llm_df_context.columns:
+        llm_df_context['throttle'] = llm_df_context['throttle'].round(0).astype('Int64')
+    if 'coolant_temp_c' in llm_df_context.columns:
+        llm_df_context['coolant_temp_c'] = llm_df_context['coolant_temp_c'].round(0).astype('Int64')
+
+    # If still too large, use time-binning instead of blind slicing
+    if len(llm_df_context) > 300:
+        # We group by chunks to preserve averages rather than dropping points
+        chunk_size = max(1, len(llm_df_context) // 300)
+        llm_df_context['chunk_id'] = np.arange(len(llm_df_context)) // chunk_size
+        
+        # Define aggregations cleanly
+        agg_map = {}
+        if 'elapsed_hms' in llm_df_context.columns:
+            agg_map['elapsed_hms'] = 'first' # Use start time of the chunk
+        if 'speed_kph' in llm_df_context.columns:
+            agg_map['speed_kph'] = 'mean'
+        if 'rpm' in llm_df_context.columns:
+            agg_map['rpm'] = 'mean'
+        if 'throttle' in llm_df_context.columns:
+            agg_map['throttle'] = 'mean'
+        if 'gear_stable' in llm_df_context.columns:
+            agg_map['gear_stable'] = 'median'
+        if 'coolant_temp_c' in llm_df_context.columns:
+            agg_map['coolant_temp_c'] = 'mean'
+            
+        llm_df_context = llm_df_context.groupby('chunk_id').agg(agg_map).reset_index(drop=True)
+        
+        # Round again after aggregation
+        if 'speed_kph' in llm_df_context.columns:
+            llm_df_context['speed_kph'] = llm_df_context['speed_kph'].round(1)
+        if 'rpm' in llm_df_context.columns:
+            llm_df_context['rpm'] = llm_df_context['rpm'].round(0).astype('Int64')
+        if 'throttle' in llm_df_context.columns:
+            llm_df_context['throttle'] = llm_df_context['throttle'].round(0).astype('Int64')
+            
+    csv_context = llm_df_context.to_csv(index=False)
 
     from ..analytics.scoring import calculate_smoothness_score, calculate_efficiency_score
     segment_analytics = _build_segment_analytics(sliced_df)

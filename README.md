@@ -144,22 +144,20 @@ LLM_DEFAULT_PROVIDER=gemini-default
 LLM_PROVIDERS_JSON={
   "gemini-default": {
     "provider_type": "gemini",
-    "label": "Gemini Flash",
+    "label": "Google AI (Gemini/Gemma)",
     "default_model": "gemini-2.5-flash",
-    "models": ["gemini-2.5-flash"],
+    "models": ["gemini-2.5-flash", "gemma-4-26b-a4b-it"],
     "api_key_env": "GEMINI_API_KEY",
     "reasoning_supported": true
   },
-  "openai-main": {
-    "provider_type": "openai_compatible",
-    "label": "OpenAI Compatible",
-    "base_url": "https://api.openai.com/v1",
-    "chat_path": "/chat/completions",
-    "default_model": "gpt-4o-mini",
-    "models": ["gpt-4o-mini", "gpt-4.1-mini"],
-    "api_key_env": "OPENAI_API_KEY",
-    "reasoning_supported": true,
-    "timeout_seconds": 60
+  "groq": {
+    "provider_type": "openai",
+    "label": "Groq",
+    "base_url": "https://api.groq.com/openai/v1",
+    "default_model": "llama-3.3-70b-versatile",
+    "models": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "gemma2-9b-it"],
+    "api_key_env": "GROQ_API_KEY",
+    "reasoning_supported": true
   }
 }
 ```

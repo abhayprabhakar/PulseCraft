@@ -334,6 +334,11 @@ def get_user_stats(
         .count()
     )
 
+    upload_chunks_size = db.query(func.sum(models.RideUploadChunk.byte_size)).join(models.RideUploadSession).filter(models.RideUploadSession.owner_id == current_user.id).scalar() or 0
+    uploaded_files_size = db.query(func.sum(models.UploadedFile.byte_size)).filter(models.UploadedFile.owner_id == current_user.id).scalar() or 0
+    json_bytes = total_rides * 50_000
+    total_data_bytes = upload_chunks_size + uploaded_files_size + json_bytes
+
     return {
         "total_rides": total_rides,
         "total_distance_km": round(total_distance, 2),
@@ -342,4 +347,5 @@ def get_user_stats(
         "favorite_bike": favorite_bike_name,
         "following_count": following_count,
         "followers_count": followers_count,
+        "total_data_bytes": total_data_bytes,
     }

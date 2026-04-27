@@ -4,21 +4,21 @@
 
 :root {
     /* MotoGP Black & Red Theme */
-    --bg-primary: #0d0d0d;
-    --bg-secondary: #1a1a1a;
-    --bg-tertiary: #242424;
-    --bg-card: rgba(26, 26, 26, 0.95);
-    --bg-card-hover: rgba(36, 36, 36, 1);
+    --bg-primary: #080808;
+    --bg-secondary: #111111;
+    --bg-tertiary: #1c1c1c;
+    --bg-card: rgba(20, 20, 20, 0.98);
+    --bg-card-hover: rgba(30, 30, 30, 1);
 
     --accent-primary: #dc0000;
     --accent-secondary: #ff3333;
     --accent-tertiary: #ffffff;
 
     --text-primary: #ffffff;
-    --text-secondary: #b0b0b0;
-    --text-muted: #707070;
+    --text-secondary: #c8c8c8;
+    --text-muted: #808080;
 
-    --border-color: rgba(255, 255, 255, 0.15);
+    --border-color: rgba(255, 255, 255, 0.1);
 
     /* Typography */
     --font-heading: 'Orbitron', sans-serif;

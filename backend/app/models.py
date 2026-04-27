@@ -27,6 +27,8 @@ class Ride(Base):
     # Actually, JSON column is easiest for "upload and dump" style.
     telemetry_blob = Column(JSON, nullable=True) 
     laps = Column(JSON, nullable=True)
+    analysis_blob = Column(JSON, nullable=True)
+    analysis_updated_at = Column(DateTime, nullable=True)
 
     title = Column(String, default="Untitled Ride")
     notes = Column(String, nullable=True)

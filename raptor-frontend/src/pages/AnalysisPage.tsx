@@ -7,6 +7,48 @@ import EventTimeline from '../components/analytics/EventTimeline';
 import SegmentLeaderboard from '../components/analytics/SegmentLeaderboard';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { MapContainer, TileLayer, Polyline, useMap } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
+
+// ── Inline mini-map for hero banner ──
+const HeroBoundsFitter: React.FC<{ segments: RideAnalysis['map_segments'] }> = ({ segments }) => {
+    const map = useMap();
+    useEffect(() => {
+        if (!segments.length) return;
+        const bounds = L.latLngBounds([]);
+        segments.forEach(seg => {
+            if (seg.start) bounds.extend(seg.start as [number, number]);
+            if (seg.end) bounds.extend(seg.end as [number, number]);
+        });
+        if (bounds.isValid()) map.fitBounds(bounds, { padding: [32, 32], animate: false });
+    }, [segments, map]);
+    return null;
+};
+
+const MiniMapHero: React.FC<{ segments: RideAnalysis['map_segments'] }> = ({ segments }) => (
+    <MapContainer
+        center={segments[0].start as [number, number]}
+        zoom={13}
+        style={{ height: '100%', width: '100%', background: 'transparent' }}
+        attributionControl={false}
+        zoomControl={false}
+        dragging={false}
+        scrollWheelZoom={false}
+        doubleClickZoom={false}
+        touchZoom={false}
+    >
+        <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
+        {segments.map((seg, i) => (
+            <Polyline
+                key={i}
+                positions={[seg.start as [number, number], seg.end as [number, number]]}
+                pathOptions={{ color: seg.color || '#ef4444', weight: 2.5, opacity: 1, lineCap: 'round', lineJoin: 'round' }}
+            />
+        ))}
+        <HeroBoundsFitter segments={segments} />
+    </MapContainer>
+);
 
 const AnalysisPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
@@ -92,21 +134,33 @@ const AnalysisPage: React.FC = () => {
 
     return (
         <div className="analysis-page">
-            <div className="page-header">
-                <h2>Advanced Telemetry Analytics</h2>
-                <div style={{ display: 'flex', gap: '1rem' }}>
-                    <button
-                        className="btn-header"
-                        onClick={() => navigate(`/rides/${id}?tab=timeseries`, { state: { initialTab: 'timeseries' } })}
-                        style={{ background: 'var(--accent-primary)', color: 'white', border: 'none' }}
-                    >
-                        <Zap size={16} style={{ display: 'inline', marginRight: '6px' }} />
-                        Time Series AI
-                    </button>
-                    <button className="btn-header btn-raw-data" onClick={handleViewRawData}>
-                        View Raw Data
-                    </button>
+            {/* ── Hero Banner ── */}
+            <div className="analysis-hero">
+                <div className="hero-left">
+                    <p className="hero-label">TELEMETRY RACECRAFT INTELLIGENCE</p>
+                    <h1 className="hero-title">{analysis.summary ? 'Ride Analysis' : 'Ride Analysis'}</h1>
+                    <p className="hero-sub">Analysis complete &nbsp;·&nbsp; {analysis.max_speed ? `${Math.round(analysis.max_speed)} km/h peak` : ''}</p>
+                    <div className="hero-actions">
+                        <button
+                            className="btn-hero-primary"
+                            onClick={() => navigate(`/rides/${id}?tab=timeseries`, { state: { initialTab: 'timeseries' } })}
+                        >
+                            <Zap size={14} /> Time Series AI
+                        </button>
+                        <button className="btn-hero-secondary" onClick={() => navigate(-1)}>
+                            ← Back
+                        </button>
+                        <button className="btn-hero-ghost" onClick={handleViewRawData}>
+                            View Raw Data
+                        </button>
+                    </div>
                 </div>
+                {/* Live track map on the right */}
+                {(analysis.map_segments || []).length > 0 && (
+                    <div className="hero-map">
+                        <MiniMapHero segments={analysis.map_segments || []} />
+                    </div>
+                )}
             </div>
 
             <div className="metrics-grid">
@@ -227,6 +281,97 @@ const AnalysisPage: React.FC = () => {
                 .btn-header { padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; transition: all 0.2s; font-weight: 500; font-size: 0.9rem; }
                 .btn-raw-data { background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-secondary); }
                 .btn-raw-data:hover { border-color: var(--accent-primary); color: var(--accent-primary); }
+
+                /* ── Hero Banner ── */
+                .analysis-hero {
+                    position: relative;
+                    display: flex;
+                    align-items: stretch;
+                    justify-content: space-between;
+                    gap: 0;
+                    background: #0f0f0f;
+                    border: 1px solid rgba(255,255,255,0.06);
+                    border-radius: 14px;
+                    overflow: hidden;
+                    margin-bottom: 2rem;
+                    min-height: 200px;
+                }
+                .hero-left {
+                    flex: 1;
+                    padding: 2rem 2.5rem;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: center;
+                    gap: 0.4rem;
+                    z-index: 2;
+                }
+                .hero-label {
+                    font-size: 0.7rem;
+                    letter-spacing: 0.15em;
+                    color: rgba(255,255,255,0.3);
+                    font-weight: 600;
+                    margin: 0;
+                    text-transform: uppercase;
+                }
+                .hero-title {
+                    font-size: 1.75rem;
+                    font-weight: 700;
+                    color: #fff;
+                    margin: 0;
+                    line-height: 1.2;
+                }
+                .hero-sub {
+                    font-size: 0.85rem;
+                    color: rgba(255,255,255,0.4);
+                    margin: 0.2rem 0 1rem;
+                }
+                .hero-actions {
+                    display: flex;
+                    gap: 0.75rem;
+                    flex-wrap: wrap;
+                }
+                .btn-hero-primary {
+                    display: flex; align-items: center; gap: 6px;
+                    background: var(--accent-primary);
+                    color: #fff;
+                    border: none;
+                    padding: 0.5rem 1.1rem;
+                    border-radius: 8px;
+                    font-size: 0.85rem;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: opacity 0.2s;
+                }
+                .btn-hero-primary:hover { opacity: 0.85; }
+                .btn-hero-secondary, .btn-hero-ghost {
+                    background: transparent;
+                    border: 1px solid rgba(255,255,255,0.12);
+                    color: rgba(255,255,255,0.6);
+                    padding: 0.5rem 1.1rem;
+                    border-radius: 8px;
+                    font-size: 0.85rem;
+                    cursor: pointer;
+                    transition: border-color 0.2s, color 0.2s;
+                }
+                .btn-hero-secondary:hover, .btn-hero-ghost:hover {
+                    border-color: rgba(255,255,255,0.3);
+                    color: #fff;
+                }
+                .hero-map {
+                    width: 340px;
+                    min-height: 200px;
+                    flex-shrink: 0;
+                    position: relative;
+                    border-left: 1px solid rgba(255,255,255,0.06);
+                }
+                .hero-map::before {
+                    content: '';
+                    position: absolute;
+                    inset: 0;
+                    background: linear-gradient(to right, #0f0f0f 0%, transparent 30%);
+                    z-index: 10;
+                    pointer-events: none;
+                }
 
                 .metrics-grid {
                     display: grid;

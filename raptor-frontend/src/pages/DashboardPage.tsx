@@ -1,47 +1,164 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ridesApi, RideSummary } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
-import { Clock, Gauge, Upload, Trash2, ChevronRight, MapPin, Route, Timer, Bike, Flame } from 'lucide-react';
+import MiniRideMap from '../components/Map/MiniRideMap';
+import { Clock, Gauge, Upload, Trash2, ChevronRight, MapPin, Route, Timer, Bike, Flame, LayoutGrid, List as ListIcon, Filter, Search, ChevronDown } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+
+type DashboardRidesCache = {
+    hasFetched: boolean;
+    signature: string;
+    allRides: RideSummary[];
+};
+
+const DASHBOARD_RIDES_CACHE_KEY = 'raptor_dashboard_rides_cache_v1';
+
+const getDefaultDashboardCache = (): DashboardRidesCache => ({
+    hasFetched: false,
+    signature: '0',
+    allRides: [],
+});
+
+const getPersistedDashboardCache = (): DashboardRidesCache => {
+    if (typeof window === 'undefined') {
+        return getDefaultDashboardCache();
+    }
+
+    try {
+        const rawCache = window.localStorage.getItem(DASHBOARD_RIDES_CACHE_KEY);
+        if (!rawCache) {
+            return getDefaultDashboardCache();
+        }
+
+        const parsed = JSON.parse(rawCache) as Partial<DashboardRidesCache>;
+        if (!parsed || !Array.isArray(parsed.allRides)) {
+            return getDefaultDashboardCache();
+        }
+
+        return {
+            hasFetched: Boolean(parsed.hasFetched),
+            signature: typeof parsed.signature === 'string' ? parsed.signature : '0',
+            allRides: parsed.allRides,
+        };
+    } catch {
+        return getDefaultDashboardCache();
+    }
+};
+
+let dashboardRidesCache: DashboardRidesCache = getPersistedDashboardCache();
 
 const DashboardPage: React.FC = () => {
     const { currentBike } = useAuth();
-    const [rides, setRides] = useState<RideSummary[]>([]);
-    const [allRides, setAllRides] = useState<RideSummary[]>([]);
+    const [allRides, setAllRides] = useState<RideSummary[]>(dashboardRidesCache.allRides);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [uploading, setUploading] = useState(false);
-    const [loadingOverview, setLoadingOverview] = useState(true);
+    const [loadingOverview, setLoadingOverview] = useState(!dashboardRidesCache.hasFetched);
     const navigate = useNavigate();
+
+    const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid');
+    const [searchQuery, setSearchQuery] = useState('');
+    const [filterMode, setFilterMode] = useState('all');
+    const [filterOpen, setFilterOpen] = useState(false);
+
+    const filterOptions: Record<string, string> = {
+        all: 'All Available',
+        assigned: 'Assigned Only',
+        unassigned: 'Unassigned Only',
+        fast: 'Fast >100km/h',
+        long: 'Long >15min'
+    };
 
     const sortByDateDesc = (items: RideSummary[]) => {
         return [...items].sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime());
     };
 
-    const loadRides = async () => {
-        setLoadingOverview(true);
+    const getRidesSignature = (items: RideSummary[]) => {
+        if (items.length === 0) return '0';
+        const latest = items[0];
+        const oldest = items[items.length - 1];
+        return [items.length, latest.id, latest.started_at, oldest.id, oldest.started_at].join('|');
+    };
+
+    const persistDashboardCache = (nextCache: DashboardRidesCache) => {
+        if (typeof window === 'undefined') return;
+
         try {
-            const [all, scoped] = await Promise.all([
-                ridesApi.list(),
-                currentBike ? ridesApi.list(currentBike.id) : Promise.resolve([]),
-            ]);
+            window.localStorage.setItem(DASHBOARD_RIDES_CACHE_KEY, JSON.stringify(nextCache));
+        } catch {
+            // Ignore storage quota and serialization issues to keep UI responsive.
+        }
+    };
 
+    const loadRides = async (options?: { silent?: boolean }) => {
+        if (!options?.silent && !dashboardRidesCache.hasFetched) {
+            setLoadingOverview(true);
+        }
+
+        try {
+            const all = await ridesApi.list();
             const sortedAll = sortByDateDesc(all || []);
-            const sortedScoped = sortByDateDesc(scoped || []);
+            const nextSignature = getRidesSignature(sortedAll);
+            const hasUpdates = nextSignature !== dashboardRidesCache.signature;
 
-            setAllRides(sortedAll);
-            setRides(currentBike ? sortedScoped : sortedAll);
+            dashboardRidesCache = {
+                hasFetched: true,
+                signature: nextSignature,
+                allRides: sortedAll,
+            };
+            persistDashboardCache(dashboardRidesCache);
+
+            if (hasUpdates) {
+                setAllRides(sortedAll);
+            }
         } catch (error) {
             console.error(error);
-            setAllRides([]);
-            setRides([]);
+
+            if (!dashboardRidesCache.hasFetched) {
+                setAllRides([]);
+            }
         } finally {
             setLoadingOverview(false);
         }
     };
 
     useEffect(() => {
+        if (dashboardRidesCache.hasFetched) {
+            setAllRides(dashboardRidesCache.allRides);
+            setLoadingOverview(false);
+            loadRides({ silent: true });
+            return;
+        }
+
         loadRides();
-    }, [currentBike]);
+    }, [currentBike?.id]);
+
+    const rides = useMemo(() => {
+        let list = allRides;
+
+        // Apply drop-down filters
+        if (filterMode === 'assigned') {
+            list = list.filter(r => currentBike && r.bike_id === currentBike.id);
+        } else if (filterMode === 'unassigned') {
+            list = list.filter(r => currentBike && r.bike_id !== currentBike.id);
+        } else if (filterMode === 'fast') {
+            list = list.filter(r => r.max_speed >= 100);
+        } else if (filterMode === 'long') {
+            list = list.filter(r => r.duration_seconds >= 15 * 60);
+        } else if (currentBike) {
+            list = list.filter((ride) => {
+                if (ride.bike_id === currentBike.id) return true;
+                return ride.bike_id === null || ride.bike_id === undefined;
+            });
+        }
+
+        // Apply textual search
+        if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase();
+            list = list.filter(r => (r.title || 'Untitled Ride').toLowerCase().includes(q));
+        }
+
+        return list;
+    }, [allRides, currentBike, filterMode, searchQuery]);
 
     const analytics = useMemo(() => {
         const totalRides = allRides.length;
@@ -238,9 +355,47 @@ const DashboardPage: React.FC = () => {
                     <h3>Recent Sessions</h3>
                     <p className="dashboard-subtitle">
                         {currentBike
-                            ? `Showing ${rides.length} sessions for ${currentBike.name}`
+                            ? `Showing ${rides.length} sessions for ${currentBike.name} (including unassigned)`
                             : `Showing ${rides.length} sessions across all bikes`}
                     </p>
+                </div>
+            </div>
+
+            <div className="rides-toolbar">
+                <div className="toolbar-search">
+                    <Search size={16} />
+                    <input 
+                        type="text" 
+                        placeholder="Search sessions..." 
+                        value={searchQuery}
+                        onChange={e => setSearchQuery(e.target.value)}
+                    />
+                </div>
+                <div className="toolbar-controls">
+                    <div className="custom-dropdown">
+                        <div className="dropdown-active" onClick={() => setFilterOpen(!filterOpen)}>
+                            <Filter size={14} />
+                            <span>{filterOptions[filterMode]}</span>
+                            <ChevronDown size={14} />
+                        </div>
+                        {filterOpen && (
+                            <div className="dropdown-menu">
+                                {Object.entries(filterOptions).map(([key, label]) => (
+                                    <div 
+                                        key={key} 
+                                        className={`dropdown-item ${filterMode === key ? 'selected' : ''}`}
+                                        onClick={() => { setFilterMode(key); setFilterOpen(false); }}
+                                    >
+                                        {label}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    <div className="toolbar-views">
+                        <button className={`view-btn ${viewMode === 'list' ? 'active' : ''}`} onClick={() => setViewMode('list')} title="List View"><ListIcon size={16} /></button>
+                        <button className={`view-btn ${viewMode === 'grid' ? 'active' : ''}`} onClick={() => setViewMode('grid')} title="Grid View"><LayoutGrid size={16} /></button>
+                    </div>
                 </div>
             </div>
 
@@ -263,50 +418,57 @@ const DashboardPage: React.FC = () => {
                             <span className="sub-text">Import a CSV or record a ride to get started.</span>
                         </div>
                     ) : (
-                        <div className="rides-list">
+                        <div className={`rides-list ${viewMode === 'grid' ? 'grid-view' : ''}`}>
                             {rides.map(ride => {
                                 const isUnassigned = ride.bike_id !== currentBike?.id;
 
                                 return (
                                     <div
                                         key={ride.id}
-                                        className="ride-card"
+                                        className={`ride-card ${viewMode === 'grid' ? 'grid-view-card' : ''}`}
                                         onClick={() => handleRideClick(ride.id)}
                                     >
-                                        <div className="ride-icon">
-                                            <MapPin size={24} />
-                                        </div>
-                                        <div className="ride-info">
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                <h4>{ride.title || 'Untitled Ride'}</h4>
-                                                {isUnassigned && (
-                                                    <span className="unassigned-badge">Unassigned</span>
+                                        {viewMode === 'grid' && (
+                                            <div className="card-map-bg">
+                                                <MiniRideMap rideId={ride.id} />
+                                            </div>
+                                        )}
+                                        <div className="rc-header">
+                                            {viewMode === 'list' && (
+                                                <div className="ride-icon"><MapPin size={18} /></div>
+                                            )}
+                                            <div className="ride-actions">
+                                                <button
+                                                    className="btn-delete"
+                                                    onClick={(e) => handleDelete(e, ride.id)}
+                                                    title="Delete Session"
+                                                >
+                                                    <Trash2 size={16} />
+                                                </button>
+                                                {viewMode === 'list' && (
+                                                    <div className="btn-arrow"><ChevronRight size={18} /></div>
                                                 )}
+                                            </div>
+                                        </div>
+
+                                        <div className="rc-body">
+                                            <div className="rc-title-row">
+                                                <h4>{ride.title || 'Untitled Ride'}</h4>
+                                                {isUnassigned && <span className="unassigned-badge">Unassigned</span>}
                                             </div>
                                             <span className="ride-date">{new Date(ride.started_at).toLocaleDateString()} • {new Date(ride.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                                         </div>
 
-                                        <div className="ride-stats">
-                                            <div className="stat-pill" title="Max Speed">
-                                                <Gauge size={14} />
-                                                <span>{ride.max_speed ? ride.max_speed.toFixed(0) : 0} km/h</span>
+                                        <div className="rc-spacer" />
+
+                                        <div className="rc-footer ride-stats">
+                                            <div className="stat-pill" title="Total Distance">
+                                                <Route size={14} />
+                                                <span>{ride.total_distance_km ? ride.total_distance_km.toFixed(1) : '0.0'} km</span>
                                             </div>
                                             <div className="stat-pill" title="Duration">
                                                 <Clock size={14} />
                                                 <span>{(ride.duration_seconds / 60).toFixed(0)} min</span>
-                                            </div>
-                                        </div>
-
-                                        <div className="ride-actions">
-                                            <button
-                                                className="btn-delete"
-                                                onClick={(e) => handleDelete(e, ride.id)}
-                                                title="Delete Session"
-                                            >
-                                                <Trash2 size={18} />
-                                            </button>
-                                            <div className="btn-arrow">
-                                                <ChevronRight size={20} />
                                             </div>
                                         </div>
                                     </div>
@@ -318,189 +480,532 @@ const DashboardPage: React.FC = () => {
             </div>
 
             <style>{`
-                .dashboard-page { padding: 1rem; display: flex; flex-direction: column; gap: 1rem; }
+                .dashboard-page { 
+                    padding: 2rem; 
+                    display: flex; 
+                    flex-direction: column; 
+                    gap: 2rem; 
+                    max-width: 1200px;
+                    margin: 0 auto;
+                }
 
                 .overview-hero {
-                    position: relative;
-                    background: linear-gradient(145deg, rgba(8, 8, 12, 0.95) 0%, rgba(18, 12, 12, 0.98) 100%);
-                    border: 1px solid rgba(255, 255, 255, 0.06);
-                    border-radius: 20px;
+                    background: linear-gradient(180deg, var(--bg-card, #1a1a1a) 0%, var(--bg-primary, #0d0d0d) 100%);
+                    border: 1px solid var(--border-color, rgba(255,255,255,0.08));
+                    border-radius: 16px;
                     padding: 2rem;
-                    box-shadow: 
-                        0 24px 54px rgba(0, 0, 0, 0.6), 
-                        inset 0 1px 0 rgba(255, 255, 255, 0.08),
-                        inset 0 -1px 0 rgba(0, 0, 0, 0.5);
+                    display: flex;
+                    flex-direction: column;
+                    gap: 2rem;
+                    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+                    position: relative;
                     overflow: hidden;
                 }
+                
                 .overview-hero::before {
                     content: '';
                     position: absolute;
-                    top: -50%; left: -50%; width: 200%; height: 200%;
-                    background: radial-gradient(circle at center, rgba(255, 60, 60, 0.12) 0%, rgba(220, 0, 0, 0.05) 30%, transparent 70%);
-                    pointer-events: none;
-                    animation: pulseGlow 8s ease-in-out infinite alternate;
+                    top: 0; left: 0; right: 0; height: 2px;
+                    background: linear-gradient(90deg, transparent, var(--accent-primary, #ff4444), transparent);
+                    opacity: 0.3;
                 }
-                @keyframes pulseGlow {
-                    0% { transform: scale(0.95); opacity: 0.8; }
-                    100% { transform: scale(1.05); opacity: 1; }
+
+                .hero-head-row { 
+                    display: flex; 
+                    justify-content: space-between; 
+                    align-items: flex-end; 
                 }
-                .hero-head-row { position: relative; display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; margin-bottom: 1.8rem; z-index: 1; }
+                
                 .hero-head-row h2 { 
                     margin: 0; 
-                    font-size: 2.2rem; 
-                    background: linear-gradient(to right, #ffffff, #ffb3b3);
-                    -webkit-background-clip: text;
-                    -webkit-text-fill-color: transparent;
-                    letter-spacing: -0.8px; 
-                    font-weight: 800; 
+                    font-size: 1.8rem; 
+                    color: var(--text-primary, #ffffff);
+                    font-weight: 700;
+                    letter-spacing: -0.5px;
                 }
-                .hero-head-row p { margin: 0.4rem 0 0; font-size: 1rem; color: #a1a1aa; font-weight: 500; }
-
-                .hero-grid { position: relative; display: grid; grid-template-columns: 1.6fr 1.1fr; gap: 1.2rem; z-index: 1; }
-                .hero-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.2rem; }
-                .hero-kpi-card {
-                    position: relative;
-                    border: 1px solid rgba(255, 255, 255, 0.04);
-                    background: linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.01) 100%);
-                    border-radius: 16px;
-                    padding: 1.25rem;
-                    display: flex;
-                    align-items: center;
-                    gap: 1rem;
-                    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-                    overflow: hidden;
-                    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
-                    backdrop-filter: blur(12px);
-                    -webkit-backdrop-filter: blur(12px);
-                }
-                .hero-kpi-card::after {
-                    content: '';
-                    position: absolute;
-                    top: 0; left: -100%; width: 50%; height: 100%;
-                    background: linear-gradient(to right, transparent, rgba(255,255,255,0.05), transparent);
-                    transform: skewX(-20deg);
-                    transition: left 0.6s ease;
-                }
-                .hero-kpi-card:hover {
-                    transform: translateY(-6px) scale(1.02);
-                    border-color: rgba(255, 70, 70, 0.4);
-                    box-shadow: 
-                        0 16px 32px rgba(0, 0, 0, 0.4), 
-                        0 0 30px rgba(220, 0, 0, 0.15),
-                        inset 0 1px 0 rgba(255,255,255,0.1);
-                    background: linear-gradient(135deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.02) 100%);
-                    z-index: 2;
-                }
-                .hero-kpi-card:hover::after { left: 200%; }
                 
-                .kpi-icon {
-                    width: 48px;
-                    height: 48px;
-                    border-radius: 14px;
-                    display: inline-flex;
-                    align-items: center;
-                    justify-content: center;
-                    color: #ff6b6b;
-                    background: linear-gradient(135deg, rgba(255,40,40,0.15) 0%, rgba(200,0,0,0.05) 100%);
-                    box-shadow: 
-                        inset 0 1px 1px rgba(255,255,255,0.1),
-                        0 4px 10px rgba(220,0,0,0.2);
-                    transition: all 0.3s ease;
+                .hero-head-row p { 
+                    margin: 0.4rem 0 0; 
+                    font-size: 0.95rem; 
+                    color: var(--text-muted, #a1a1aa); 
+                    font-weight: 500;
                 }
-                .hero-kpi-card:hover .kpi-icon {
-                    color: #ffffff;
-                    background: linear-gradient(135deg, var(--accent-primary) 0%, #a00 100%);
-                    transform: scale(1.1) rotate(5deg);
-                    box-shadow: 0 8px 16px rgba(220,0,0,0.4);
-                }
-                .kpi-content { display: flex; flex-direction: column; gap: 0.2rem; }
-                .kpi-content span { font-size: 0.8rem; color: #a1a1aa; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; }
-                .kpi-content strong { font-size: 1.5rem; color: #ffffff; line-height: 1.1; font-weight: 800; letter-spacing: -0.5px;}
 
-                .hero-summary {
-                    border: 1px solid rgba(255, 255, 255, 0.06);
-                    background: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.005) 100%);
-                    border-radius: 16px;
+                .hero-grid { 
+                    display: grid; 
+                    grid-template-columns: 1fr; 
+                    gap: 1.5rem; 
+                }
+                
+                @media (min-width: 900px) {
+                    .hero-grid { grid-template-columns: 1.5fr 1fr; gap: 2rem; }
+                }
+
+                .hero-kpis { 
+                    display: grid; 
+                    grid-template-columns: repeat(2, 1fr); 
+                    gap: 1rem; 
+                }
+                
+                .hero-kpi-card {
+                    background: var(--bg-card, rgba(255, 255, 255, 0.03));
+                    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.05));
+                    border-radius: 12px;
                     padding: 1.5rem;
                     display: flex;
                     flex-direction: column;
-                    justify-content: space-between;
-                    gap: 0.8rem;
-                    box-shadow: 
-                        inset 0 1px 0 rgba(255,255,255,0.05),
-                        0 8px 24px rgba(0,0,0,0.15);
-                    backdrop-filter: blur(12px);
-                    -webkit-backdrop-filter: blur(12px);
-                    transition: transform 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+                    gap: 1rem;
+                    transition: all 0.2s ease;
                 }
-                .hero-summary:hover {
-                    transform: translateY(-3px);
-                    border-color: rgba(255,255,255,0.15);
-                    box-shadow: 0 12px 32px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.1);
+                
+                .hero-kpi-card:hover {
+                    background: var(--bg-card, rgba(255, 255, 255, 0.05));
+                    border-color: var(--accent-primary, #ff4444);
+                    transform: translateY(-2px);
                 }
-                .summary-item-line { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; font-size: 0.9rem; color: #a1a1aa; border-bottom: 1px dashed rgba(255,255,255,0.05); padding-bottom: 0.4rem;}
-                .summary-item-line:last-of-type { border-bottom: none; padding-bottom: 0; }
-                .summary-item-line strong { color: #ffffff; font-weight: 700; font-size: 1rem;}
+                
+                .kpi-icon {
+                    width: 40px;
+                    height: 40px;
+                    border-radius: 10px;
+                    background: var(--bg-card, rgba(255, 68, 68, 0.1));
+                    color: var(--accent-primary, #ff4444);
+                    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.05));
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }
+                
+                .kpi-content { 
+                    display: flex; 
+                    flex-direction: column; 
+                    gap: 0.3rem; 
+                }
+                
+                .kpi-content span { 
+                    font-size: 0.8rem; 
+                    color: var(--text-muted, #a1a1aa); 
+                    font-weight: 600; 
+                    text-transform: uppercase; 
+                    letter-spacing: 0.5px; 
+                }
+                
+                .kpi-content strong { 
+                    font-size: 1.6rem; 
+                    color: var(--text-primary, #ffffff); 
+                    font-weight: 700;
+                    line-height: 1;
+                }
 
-                .summary-progress-wrap { margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem; background: rgba(0,0,0,0.2); padding: 0.8rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.03);}
-                .summary-progress-label { display: flex; justify-content: space-between; font-size: 0.8rem; color: #e4e4e7; font-weight: 600;}
-                .summary-progress-label span:last-child { color: var(--accent-primary); background: rgba(220,0,0,0.15); padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.75rem;}
-                .summary-progress-track {
-                    height: 8px;
-                    border-radius: 999px;
-                    background: rgba(0,0,0,0.4);
-                    overflow: hidden;
-                    box-shadow: inset 0 1px 3px rgba(0,0,0,0.5);
-                    border: 1px solid rgba(255,255,255,0.05);
+                .hero-summary {
+                    background: var(--bg-card, rgba(0, 0, 0, 0.2));
+                    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.05));
+                    border-radius: 12px;
+                    padding: 1.5rem;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 1rem;
                 }
+                
+                .summary-item-line { 
+                    display: flex; 
+                    justify-content: space-between; 
+                    align-items: center; 
+                    font-size: 0.9rem; 
+                    color: var(--text-muted, #a1a1aa); 
+                    padding-bottom: 0.6rem;
+                    border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.04));
+                }
+                
+                .summary-item-line:last-of-type { 
+                    border-bottom: none; 
+                    padding-bottom: 0; 
+                }
+                
+                .summary-item-line strong { 
+                    color: var(--text-primary, #ffffff); 
+                    font-weight: 600; 
+                }
+
+                .summary-progress-wrap { 
+                    margin-top: 0.8rem; 
+                    display: flex; 
+                    flex-direction: column; 
+                    gap: 0.6rem; 
+                }
+                
+                .summary-progress-label { 
+                    display: flex; 
+                    justify-content: space-between; 
+                    font-size: 0.8rem; 
+                    color: var(--text-primary, #e4e4e7); 
+                    font-weight: 500;
+                }
+                
+                .summary-progress-track {
+                    height: 6px;
+                    border-radius: 3px;
+                    background: var(--bg-card, rgba(0, 0, 0, 0.4));
+                    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.05));
+                    overflow: hidden;
+                }
+                
                 .summary-progress-fill {
                     height: 100%;
-                    border-radius: 999px;
-                    background: linear-gradient(90deg, #ff3333, #ff0000);
-                    box-shadow: 0 0 12px rgba(255, 60, 60, 0.6);
-                    position: relative;
+                    border-radius: 3px;
+                    background: var(--accent-primary, #ff4444);
+                    box-shadow: 0 0 10px var(--accent-primary, rgba(255, 68, 68, 0.4));
                 }
-                .summary-progress-fill::after {
-                    content: '';
-                    position: absolute;
-                    top: 0; left: 0; right: 0; bottom: 0;
-                    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.6), transparent);
-                    animation: shimmerFast 1.5s infinite;
+                
+                .hero-footnote { 
+                    font-size: 0.75rem; 
+                    color: var(--text-muted, #63636b); 
+                    text-align: right; 
+                    margin-top: 0.5rem; 
+                    font-style: italic;
                 }
-                @keyframes shimmerFast { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
-                .hero-footnote { font-size: 0.75rem; color: #52525b; text-align: center; margin-top: 0.2rem; font-style: italic;}
 
-                .dashboard-header { display: flex; justify-content: space-between; align-items: center; margin-top: 0.2rem; }
-                .dashboard-header h3 { margin: 0; font-size: 1.5rem; font-weight: 700; color: var(--text-primary); }
-                .dashboard-subtitle { margin: 0.2rem 0 0; font-size: 0.84rem; color: var(--text-muted); }
+                .dashboard-header { 
+                    display: flex; 
+                    justify-content: space-between; 
+                    align-items: flex-end; 
+                    padding-bottom: 0.5rem;
+                    border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+                }
                 
-                .btn-upload { background: linear-gradient(135deg, var(--accent-primary) 0%, #8a0000 100%); border: none; color: white; padding: 0.6rem 1.2rem; border-radius: 8px; display: flex; align-items: center; gap: 0.5rem; transition: all 0.2s; font-weight: 600; cursor: pointer; box-shadow: 0 4px 12px rgba(220,0,0,0.3); }
-                .btn-upload:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(220,0,0,0.5); filter: brightness(1.1); }
-                .btn-upload:disabled { opacity: 0.7; cursor: not-allowed; transform: none; filter: grayscale(1); }
+                .dashboard-header h3 { 
+                    margin: 0; 
+                    font-size: 1.4rem; 
+                    font-weight: 600; 
+                    color: var(--text-primary, #ffffff); 
+                }
                 
-                .rides-list { display: flex; flex-direction: column; gap: 1rem; }
+                .dashboard-subtitle { 
+                    margin: 0.4rem 0 0; 
+                    font-size: 0.9rem; 
+                    color: var(--text-muted, #a1a1aa); 
+                }
+                
+                .btn-upload { 
+                    background: var(--accent-primary, #ff4444);
+                    color: white; 
+                    border: none;
+                    padding: 0.6rem 1.2rem; 
+                    border-radius: 8px; 
+                    display: flex; 
+                    align-items: center; 
+                    gap: 0.5rem; 
+                    font-size: 0.9rem; 
+                    font-weight: 600; 
+                    cursor: pointer; 
+                    transition: all 0.2s ease; 
+                    box-shadow: 0 4px 12px rgba(255, 68, 68, 0.2);
+                }
+                
+                .btn-upload:hover { 
+                    filter: brightness(1.1);
+                    transform: translateY(-1px);
+                    box-shadow: 0 6px 16px rgba(255, 68, 68, 0.3);
+                }
+                
+                .btn-upload:disabled { 
+                    opacity: 0.5; 
+                    cursor: not-allowed; 
+                    transform: none;
+                }
+
+                /* ── Toolbar ── */
+                .rides-toolbar {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    background: transparent;
+                    padding: 0 0 1rem 0;
+                    margin-top: 0.5rem;
+                }
+                .toolbar-search {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.8rem;
+                    background: rgba(255, 255, 255, 0.03);
+                    border: 1px solid rgba(255,255,255,0.08); /* Soft glass border */
+                    padding: 0.6rem 1rem;
+                    border-radius: 12px;
+                    width: 320px;
+                    color: rgba(255,255,255,0.6);
+                    transition: all 0.2s;
+                }
+                .toolbar-search:focus-within {
+                    background: rgba(255, 255, 255, 0.05);
+                    border-color: rgba(255,255,255,0.15);
+                    color: white;
+                }
+                .toolbar-search input {
+                    background: transparent;
+                    border: none;
+                    outline: none;
+                    color: #fff;
+                    width: 100%;
+                    font-size: 0.9rem;
+                    font-family: inherit;
+                }
+                .toolbar-controls {
+                    display: flex;
+                    gap: 1rem;
+                    align-items: center;
+                }
+                /* Custom Dropdown */
+                .custom-dropdown {
+                    position: relative;
+                    user-select: none;
+                }
+                .dropdown-active {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.6rem;
+                    background: rgba(255,255,255,0.03);
+                    border: 1px solid rgba(255,255,255,0.08);
+                    padding: 0.6rem 1rem;
+                    border-radius: 12px;
+                    color: rgba(255,255,255,0.8);
+                    cursor: pointer;
+                    font-size: 0.9rem;
+                    transition: all 0.2s;
+                }
+                .dropdown-active:hover {
+                    background: rgba(255,255,255,0.06);
+                }
+                .dropdown-menu {
+                    position: absolute;
+                    top: calc(100% + 8px);
+                    right: 0;
+                    width: 200px;
+                    background: #18181b;
+                    border: 1px solid rgba(255,255,255,0.1);
+                    border-radius: 12px;
+                    box-shadow: 0 12px 24px rgba(0,0,0,0.5);
+                    overflow: hidden;
+                    z-index: 100;
+                    padding: 0.4rem;
+                }
+                .dropdown-item {
+                    padding: 0.6rem 1rem;
+                    font-size: 0.9rem;
+                    color: rgba(255,255,255,0.7);
+                    cursor: pointer;
+                    border-radius: 8px;
+                    transition: all 0.2s;
+                }
+                .dropdown-item:hover {
+                    background: rgba(255,255,255,0.05);
+                    color: white;
+                }
+                .dropdown-item.selected {
+                    background: rgba(255, 68, 68, 0.1);
+                    color: #ff4444;
+                    font-weight: 500;
+                }
+                /* Layout Toggle Pills */
+                .toolbar-views {
+                    display: flex;
+                    background: rgba(255,255,255,0.03);
+                    border: 1px solid rgba(255,255,255,0.08);
+                    border-radius: 12px;
+                    padding: 0.25rem;
+                }
+                .view-btn {
+                    background: transparent;
+                    border: none;
+                    color: rgba(255,255,255,0.4);
+                    padding: 0.5rem 0.8rem;
+                    cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    border-radius: 8px;
+                    transition: all 0.2s;
+                }
+                .view-btn:hover {
+                    color: rgba(255,255,255,0.8);
+                }
+                .view-btn.active {
+                    background: rgba(255, 255, 255, 0.1);
+                    color: #fff;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+                }
+                
+                /* ── Rides List / Grid ── */
+                .rides-list { 
+                    display: flex; 
+                    flex-direction: column; 
+                    gap: 1rem; 
+                }
+                .rides-list.grid-view {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+                    gap: 1.2rem;
+                }
                 
                 .ride-card { 
                     background: var(--bg-card); 
                     padding: 1.2rem; 
                     border-radius: 12px; 
                     border: 1px solid var(--border-color); 
-                    display: grid; 
-                    grid-template-columns: auto 1fr auto auto; 
-                    align-items: center; 
-                    gap: 1.5rem; 
-                    transition: all 0.2s ease; 
+                    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); 
                     cursor: pointer; 
                     position: relative;
                     overflow: hidden;
                 }
                 .ride-card:hover { 
-                    transform: translateY(-2px); 
+                    transform: translateY(-4px); 
                     border-color: var(--accent-primary); 
-                    box-shadow: 0 8px 24px rgba(0,0,0,0.2);
-                    background: linear-gradient(90deg, var(--bg-card) 0%, rgba(255,255,255,0.03) 100%);
+                    box-shadow: 0 12px 32px rgba(0,0,0,0.4);
+                    background: linear-gradient(135deg, var(--bg-card) 0%, rgba(255,255,255,0.03) 100%);
+                }
+
+                .ride-card > * {
+                    position: relative;
+                    z-index: 10;
+                }
+
+                .card-map-bg {
+                    position: absolute;
+                    top: 0; left: 0; right: 0; bottom: 0;
+                    z-index: 0 !important;
+                    opacity: 0;
+                    transition: opacity 0.5s ease;
                 }
                 
+                .ride-card.grid-view-card .card-map-bg {
+                    opacity: 1;
+                }
+
+                /* ---- Base List Mode Mapping ---- */
+                .ride-card:not(.grid-view-card) {
+                    display: grid; 
+                    grid-template-columns: auto 1fr auto auto; 
+                    align-items: center; 
+                    gap: 1.5rem; 
+                }
+                .ride-card:not(.grid-view-card) .rc-header {
+                    display: flex; gap: 1.5rem; align-items: center;
+                }
+                .ride-card:not(.grid-view-card) .rc-body {
+                     display: flex; flex-direction: column; gap: 0.2rem;
+                }
+                .ride-card:not(.grid-view-card) .rc-title-row {
+                     display: flex; align-items: center; gap: 0.5rem;
+                }
+                .ride-card:not(.grid-view-card) .rc-spacer { display: none; }
+                .ride-card:not(.grid-view-card) .ride-actions {
+                    display: flex; align-items: center; gap: 1rem;
+                }
+
+                /* ---- Grid View Structuring ---- */
+                .grid-view-card {
+                    display: flex;
+                    flex-direction: column;
+                    min-height: 340px;
+                    background: rgba(255, 255, 255, 0.03);
+                    backdrop-filter: blur(20px);
+                    -webkit-backdrop-filter: blur(20px);
+                    border: 1px solid rgba(255, 255, 255, 0.07);
+                    box-shadow:
+                        0 8px 32px rgba(0, 0, 0, 0.5),
+                        inset 0 1px 0 rgba(255, 255, 255, 0.06);
+                    gap: 0;
+                    padding: 0;
+                    overflow: hidden;
+                    position: relative;
+                    transition:
+                        transform 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+                        box-shadow 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+                        border-color 0.35s ease;
+                }
+                .grid-view-card:hover {
+                    transform: translateY(-5px) scale(1.012);
+                    border-color: rgba(220, 0, 0, 0.28);
+                    box-shadow:
+                        0 20px 56px rgba(0, 0, 0, 0.65),
+                        0 0 0 1px rgba(220, 0, 0, 0.15),
+                        inset 0 1px 0 rgba(255, 255, 255, 0.1);
+                }
+                /* Map zoom-in on card hover */
+                .grid-view-card .card-map-bg {
+                    transition: transform 0.65s cubic-bezier(0.22, 1, 0.36, 1),
+                                filter 0.45s ease;
+                    transform-origin: center;
+                    will-change: transform;
+                }
+                .grid-view-card:hover .card-map-bg {
+                    transform: scale(1.07);
+                    filter: brightness(1.15) saturate(1.2);
+                }
+                .grid-view-card .rc-header {
+                    position: absolute;
+                    top: 1.2rem;
+                    right: 1.2rem;
+                    z-index: 20;
+                    margin: 0;
+                    padding: 0;
+                }
+                .grid-view-card .ride-actions {
+                    display: flex;
+                }
+                .grid-view-card .rc-body {
+                    display: flex;
+                    flex-direction: column;
+                    padding: 1.2rem 1.2rem 0;
+                }
+                .grid-view-card .rc-title-row {
+                    display: flex; align-items: flex-start; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.2rem;
+                }
+                .grid-view-card h4 {
+                    font-family: var(--font-heading);
+                    font-size: 1.05rem;
+                    font-weight: 700;
+                    letter-spacing: -0.02em;
+                    line-height: 1.25;
+                    color: transparent;
+                    background: linear-gradient(160deg, #ffffff 30%, rgba(255,255,255,0.65) 100%);
+                    -webkit-background-clip: text;
+                    background-clip: text;
+                    margin: 0;
+                    text-shadow: none;
+                    filter: drop-shadow(0 2px 16px rgba(0,0,0,0.9));
+                }
+                .grid-view-card .unassigned-badge {
+                    display: none;
+                }
+                .grid-view-card .ride-date {
+                    font-size: 0.72rem;
+                    color: rgba(255,255,255,0.35);
+                    letter-spacing: 0.03em;
+                    margin-top: 0.3rem;
+                    font-weight: 500;
+                }
+                .grid-view-card .rc-spacer {
+                    flex-grow: 1; /* Pushes footer down */
+                }
+                .grid-view-card .rc-footer {
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    gap: 0.8rem;
+                    margin-top: auto;
+                    background: transparent;
+                    border-top: none;
+                    padding: 1.5rem 1.2rem 1rem;
+                    position: relative;
+                    z-index: 10;
+                }
+                .grid-view-card .stat-pill {
+                    background: rgba(10, 10, 10, 0.55);
+                    backdrop-filter: blur(12px);
+                    -webkit-backdrop-filter: blur(12px);
+                    border: 1px solid rgba(255,255,255,0.08);
+                    color: rgba(255,255,255,0.85);
+                    justify-content: center;
+                }
+
                 .ride-icon {
                     width: 48px;
                     height: 48px;
@@ -515,9 +1020,7 @@ const DashboardPage: React.FC = () => {
                     background: var(--accent-primary);
                     color: #000;
                 }
-
-                .ride-info { display: flex; flex-direction: column; gap: 0.2rem; }
-                .ride-info h4 { margin: 0; color: var(--text-primary); font-size: 1.1rem; font-weight: 600; }
+                .rc-body h4 { margin: 0; color: var(--text-primary); font-size: 1.1rem; font-weight: 600; }
                 .ride-date { font-size: 0.85rem; color: var(--text-muted); }
                 
                 .unassigned-badge {

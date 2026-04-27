@@ -12,4 +12,7 @@ export interface UserStats {
     max_speed_kph: number;
     total_hours: number;
     favorite_bike: string;
+    total_data_bytes?: number;
+    following_count?: number;
+    followers_count?: number;
 }

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { Bike } from '../types/bike';
 import { User } from '../types/user';
 import { bikesApi, authApi } from '../services/api';
@@ -26,8 +26,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return saved ? JSON.parse(saved) : null;
     });
     const [bikes, setBikes] = useState<Bike[]>([]);
+    const currentBikeRef = useRef<Bike | null>(currentBike);
 
     const isAuthenticated = !!token;
+
+    useEffect(() => {
+        currentBikeRef.current = currentBike;
+    }, [currentBike]);
 
     useEffect(() => {
         if (token) {
@@ -59,16 +64,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
             const bikeList = await bikesApi.list();
             setBikes(bikeList);
+            const activeBike = currentBikeRef.current;
 
             // If we have no current bike, but have bikes in the list, try to set a default
-            if (!currentBike && bikeList.length > 0) {
+            if (!activeBike && bikeList.length > 0) {
                 const defaultBike = bikeList.find(b => b.is_default) || bikeList[0];
                 selectBike(defaultBike);
-            } else if (currentBike) {
+            } else if (activeBike) {
                 // Verify current bike still exists and update it
-                const found = bikeList.find(b => b.id === currentBike.id);
+                const found = bikeList.find(b => b.id === activeBike.id);
                 if (found) {
                     setCurrentBike(found); // Update with latest data
+                    currentBikeRef.current = found;
                     localStorage.setItem('currentBike', JSON.stringify(found));
                 } else {
                     // Current bike was deleted?
@@ -97,6 +104,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     const selectBike = (bike: Bike | null) => {
+        currentBikeRef.current = bike;
         setCurrentBike(bike);
         if (bike) {
             localStorage.setItem('currentBike', JSON.stringify(bike));
