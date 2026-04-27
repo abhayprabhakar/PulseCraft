@@ -139,17 +139,13 @@ const DashboardPage: React.FC = () => {
         if (filterMode === 'assigned') {
             list = list.filter(r => currentBike && r.bike_id === currentBike.id);
         } else if (filterMode === 'unassigned') {
-            list = list.filter(r => currentBike && r.bike_id !== currentBike.id);
+            list = list.filter(r => !currentBike || r.bike_id !== currentBike.id);
         } else if (filterMode === 'fast') {
             list = list.filter(r => r.max_speed >= 100);
         } else if (filterMode === 'long') {
             list = list.filter(r => r.duration_seconds >= 15 * 60);
-        } else if (currentBike) {
-            list = list.filter((ride) => {
-                if (ride.bike_id === currentBike.id) return true;
-                return ride.bike_id === null || ride.bike_id === undefined;
-            });
         }
+        // filterMode === 'all' → no filter, show every ride
 
         // Apply textual search
         if (searchQuery.trim()) {

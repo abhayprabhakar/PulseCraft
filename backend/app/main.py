@@ -18,26 +18,39 @@ def _ensure_ride_schema_columns() -> None:
     try:
         inspector = inspect(engine)
         if not inspector.has_table("rides"):
-            return # Let Base.metadata.create_all handle new tables
+            return  # Let Base.metadata.create_all handle new tables
+
+        is_pg = engine.dialect.name.startswith("postgres")
+        ts_type = "TIMESTAMP" if is_pg else "DATETIME"
+        json_type = "JSONB" if is_pg else "JSON"
 
         columns = [col['name'] for col in inspector.get_columns("rides")]
-        if 'laps' not in columns:
-            with engine.begin() as conn:
-                conn.execute(text("ALTER TABLE rides ADD COLUMN laps JSON"))
-        if 'visibility' not in columns:
-            with engine.begin() as conn:
-                conn.execute(text("ALTER TABLE rides ADD COLUMN visibility VARCHAR DEFAULT 'private'"))
-        if 'analysis_blob' not in columns:
-            with engine.begin() as conn:
-                conn.execute(text("ALTER TABLE rides ADD COLUMN analysis_blob JSON"))
-        if 'analysis_updated_at' not in columns:
-            with engine.begin() as conn:
-                conn.execute(text("ALTER TABLE rides ADD COLUMN analysis_updated_at DATETIME"))
 
-        with engine.begin() as conn:
-            conn.execute(text("UPDATE rides SET visibility = 'private' WHERE visibility IS NULL OR visibility = ''"))
+        migrations = {
+            'laps':                f"ALTER TABLE rides ADD COLUMN laps {json_type}",
+            'visibility':           "ALTER TABLE rides ADD COLUMN visibility VARCHAR DEFAULT 'private'",
+            'analysis_blob':       f"ALTER TABLE rides ADD COLUMN analysis_blob {json_type}",
+            'analysis_updated_at': f"ALTER TABLE rides ADD COLUMN analysis_updated_at {ts_type}",
+        }
+
+        for col_name, statement in migrations.items():
+            if col_name in columns:
+                continue
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text(statement))
+                columns.append(col_name)
+            except Exception as col_exc:
+                print(f"Ride schema migration skipped for '{col_name}': {col_exc}")
+
+        try:
+            with engine.begin() as conn:
+                conn.execute(text("UPDATE rides SET visibility = 'private' WHERE visibility IS NULL OR visibility = ''"))
+        except Exception as e:
+            print(f"Ride visibility backfill skipped: {e}")
     except Exception as e:
         print(f"Schema check failed gracefully: {e}")
+
 
 _ensure_ride_schema_columns()
 
