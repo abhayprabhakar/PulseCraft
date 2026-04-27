@@ -139,7 +139,7 @@ const GearUsageChart: React.FC<Props> = ({ data }) => {
                             name="Time in Gear"
                             barSize={36}
                             radius={[8, 8, 2, 2]}
-                            activeBar={{ fill: '#ff5a5a', stroke: '#ffd2d2', strokeWidth: 1, radius: [8, 8, 2, 2] }}
+                            activeBar={{ fill: '#ff5a5a', stroke: '#ffd2d2', strokeWidth: 1, radius: [8, 8, 2, 2] as any }}
                         >
                             {sortedData.map((_, index) => (
                                 <Cell key={`cell-${index}`} fill={BAR_COLORS[index % BAR_COLORS.length]} />

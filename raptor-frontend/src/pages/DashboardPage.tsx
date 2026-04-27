@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ridesApi, RideSummary } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import MiniRideMap from '../components/Map/MiniRideMap';
-import { Clock, Gauge, Upload, Trash2, ChevronRight, MapPin, Route, Timer, Bike, Flame, LayoutGrid, List as ListIcon, Filter, Search, ChevronDown } from 'lucide-react';
+import { Clock, Upload, Trash2, ChevronRight, MapPin, Route, Timer, Bike, Flame, LayoutGrid, List as ListIcon, Filter, Search, ChevronDown } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 type DashboardRidesCache = {

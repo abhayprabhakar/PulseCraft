@@ -6,6 +6,7 @@ import { bikesApi, authApi } from '../services/api';
 interface AuthContextType {
     token: string | null;
     isAuthenticated: boolean;
+    isInitializing: boolean;
     login: (token: string) => void;
     logout: () => void;
     user: User | null;
@@ -21,6 +22,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
     const [user, setUser] = useState<User | null>(null);
+    const [isInitializing, setIsInitializing] = useState<boolean>(!!localStorage.getItem('token'));
     const [currentBike, setCurrentBike] = useState<Bike | null>(() => {
         const saved = localStorage.getItem('currentBike');
         return saved ? JSON.parse(saved) : null;
@@ -50,12 +52,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, [token]);
 
     const refreshProfile = async () => {
-        if (!token) return;
+        if (!token) { setIsInitializing(false); return; }
         try {
             const userData = await authApi.getProfile();
             setUser(userData);
         } catch (error) {
             console.error("Failed to fetch profile", error);
+            // If profile fetch fails (e.g. 401), the axios interceptor handles redirect
+        } finally {
+            setIsInitializing(false);
         }
     }
 
@@ -93,6 +98,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     const login = (newToken: string) => {
+        setIsInitializing(true);
         setToken(newToken);
     };
 
@@ -114,7 +120,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     return (
-        <AuthContext.Provider value={{ token, isAuthenticated, login, logout, user, currentBike, bikes, selectBike, refreshBikes, refreshProfile }}>
+        <AuthContext.Provider value={{ token, isAuthenticated, isInitializing, login, logout, user, currentBike, bikes, selectBike, refreshBikes, refreshProfile }}>
             {children}
         </AuthContext.Provider>
     );

@@ -14,7 +14,15 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import './styles/global.css';
 
 const ProtectedRoute = () => {
-    const { isAuthenticated } = useAuth();
+    const { isAuthenticated, isInitializing } = useAuth();
+    if (isInitializing) {
+        return (
+            <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#080808' }}>
+                <div style={{ width: 28, height: 28, border: '2px solid rgba(255,255,255,0.08)', borderTop: '2px solid #dc0000', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+                <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+            </div>
+        );
+    }
     return isAuthenticated ? <Outlet /> : <Navigate to="/signin" replace />;
 };
 
