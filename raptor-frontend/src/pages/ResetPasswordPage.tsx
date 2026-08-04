@@ -1,29 +1,36 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
 import { authApi } from '../services/api';
-import { Lock, User } from 'lucide-react';
+import { Lock, Mail } from 'lucide-react';
 
-const LoginPage: React.FC = () => {
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
+const ResetPasswordPage: React.FC = () => {
+    const [identifier, setIdentifier] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
     const [error, setError] = useState('');
+    const [success, setSuccess] = useState('');
     const [loading, setLoading] = useState(false);
-    const { login } = useAuth();
     const navigate = useNavigate();
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
+        setSuccess('');
+        
+        if (newPassword !== confirmPassword) {
+            setError('Passwords do not match');
+            return;
+        }
+        
         setLoading(true);
 
         try {
-            const data = await authApi.login(email, password);
-            login(data.access_token);
-            navigate('/dashboard');
-        } catch (err) {
-            setError('Invalid email or password');
+            await authApi.resetPassword(identifier, newPassword);
+            setSuccess('Password reset successfully!');
+            setTimeout(() => navigate('/signin'), 2000);
+        } catch (err: any) {
             console.error(err);
+            setError(err.response?.data?.detail || 'Reset failed. Check username/email and try again.');
         } finally {
             setLoading(false);
         }
@@ -34,7 +41,7 @@ const LoginPage: React.FC = () => {
             <div className="login-card">
                 <div className="login-header">
                     <h2>RAPTOR</h2>
-                    <span>Rider Analytics</span>
+                    <span>Reset Password</span>
                 </div>
 
                 <form onSubmit={handleSubmit}>
@@ -42,19 +49,19 @@ const LoginPage: React.FC = () => {
                     <div className="form-group">
                         <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <span>Backend URL</span>
-                            <span id="status-text" style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}></span>
+                            <span id="status-text-reset" style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}></span>
                         </label>
                         <div className="input-wrapper">
-                            <div id="status-indicator" style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#666', marginRight: '4px' }} title="Server Status"></div>
+                            <div id="status-indicator-reset" style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#666', marginRight: '4px' }} title="Server Status"></div>
                             <input
                                 type="text"
                                 placeholder="http://localhost:8000"
                                 defaultValue={localStorage.getItem('api_url') || import.meta.env.VITE_API_URL || 'http://localhost:8000'}
                                 onBlur={(e) => {
                                     const url = e.target.value;
-                                    const indicator = document.getElementById('status-indicator');
-                                    const statusText = document.getElementById('status-text');
-                                    if (indicator) indicator.style.background = '#eab308'; // Yellow/Checking
+                                    const indicator = document.getElementById('status-indicator-reset');
+                                    const statusText = document.getElementById('status-text-reset');
+                                    if (indicator) indicator.style.background = '#eab308';
                                     if (statusText) statusText.innerText = 'Checking...';
 
                                     import('../services/api').then(({ setBaseUrl, checkConnection }) => {
@@ -72,46 +79,58 @@ const LoginPage: React.FC = () => {
                     </div>
 
                     <div className="form-group">
-                        <label>Email</label>
+                        <label>Username or Email</label>
                         <div className="input-wrapper">
-                            <User size={18} />
+                            <Mail size={18} />
                             <input
-                                type="email"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
+                                type="text"
+                                value={identifier}
+                                onChange={(e) => setIdentifier(e.target.value)}
                                 required
-                                placeholder="rider@raptor.dev"
+                                placeholder="Enter your username or email"
                             />
                         </div>
                     </div>
                     <div className="form-group">
-                        <label>Password</label>
+                        <label>New Password</label>
                         <div className="input-wrapper">
                             <Lock size={18} />
                             <input
                                 type="password"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
+                                value={newPassword}
+                                onChange={(e) => setNewPassword(e.target.value)}
                                 required
-                                placeholder="••••••••"
+                                placeholder="Enter new password"
                             />
                         </div>
                     </div>
-                    {error && <div className="error-message">{error}</div>}
-                    
-                    <div style={{ textAlign: 'right', marginBottom: '1rem' }}>
-                        <Link to="/reset-password" style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', textDecoration: 'none' }}>
-                            Forgot Password?
-                        </Link>
+                    <div className="form-group">
+                        <label>Confirm Password</label>
+                        <div className="input-wrapper">
+                            <Lock size={18} />
+                            <input
+                                type="password"
+                                value={confirmPassword}
+                                onChange={(e) => setConfirmPassword(e.target.value)}
+                                required
+                                placeholder="Confirm new password"
+                            />
+                        </div>
                     </div>
 
-                    <button type="submit" disabled={loading} className="btn-login">
-                        {loading ? 'Authenticating...' : 'Sign In'}
+                    {error && <div className="error-message">{error}</div>}
+                    {success && <div className="success-message" style={{ color: '#22c55e', fontSize: '0.85rem', marginBottom: '1rem', textAlign: 'center' }}>{success}</div>}
+
+                    <button type="submit" className="btn-login" disabled={loading}>
+                        {loading ? 'Resetting...' : 'Reset Password'}
                     </button>
+                    
+                    <div className="login-footer" style={{ marginTop: '1rem', textAlign: 'center' }}>
+                        <Link to="/signin" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.9rem' }}>
+                            Back to Login
+                        </Link>
+                    </div>
                 </form>
-                <div className="auth-footer">
-                    Don't have an account? <Link to="/signup">Sign Up</Link>
-                </div>
             </div>
             <style>{`
                 .login-container { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--bg-primary); }
@@ -136,4 +155,4 @@ const LoginPage: React.FC = () => {
     );
 };
 
-export default LoginPage;
+export default ResetPasswordPage;

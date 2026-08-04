@@ -384,3 +384,9 @@ class BikeDocument(BikeDocumentBase):
 class BikeDocumentUploadResponse(BaseModel):
     doc_type: str
     pdf_url: str
+
+
+class PasswordResetRequest(BaseModel):
+    identifier: str
+    new_password: str
+

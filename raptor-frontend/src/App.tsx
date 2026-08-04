@@ -7,6 +7,7 @@ import SettingsPage from './pages/SettingsPage';
 import SimulationPage from './pages/SimulationPage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import BikeSelectionPage from './pages/BikeSelectionPage';
 import RidePage from './pages/RidePage';
 import BikeDocumentsPage from './pages/BikeDocumentsPage';
@@ -39,6 +40,7 @@ function App() {
                     <Route path="/signin" element={<LoginPage />} />
                     <Route path="/login" element={<Navigate to="/signin" replace />} />
                     <Route path="/signup" element={<SignupPage />} />
+                    <Route path="/reset-password" element={<ResetPasswordPage />} />
 
                     {/* Protected Routes */}
                     <Route element={<ProtectedRoute />}>

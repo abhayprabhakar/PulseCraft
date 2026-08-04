@@ -81,6 +81,10 @@ export const authApi = {
         const response = await api.get('/api/v1/auth/me');
         return response.data;
     },
+    resetPassword: async (identifier: string, new_password: string): Promise<{message: string}> => {
+        const response = await api.post('/api/v1/auth/reset-password', { identifier, new_password });
+        return response.data;
+    },
     updateProfile: async (data: { full_name?: string; email?: string }): Promise<User> => {
         const response = await api.put('/api/v1/auth/me', data);
         return response.data;
