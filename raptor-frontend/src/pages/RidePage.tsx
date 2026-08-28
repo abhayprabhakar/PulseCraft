@@ -314,7 +314,7 @@ function TelemetryMap({ telemetryData, timeRange, pinnedPoint, hoveredPoint, map
     return (
         <>
             <MapContainer center={fullRoute[0]} zoom={15} style={{ height: '100%', width: '100%' }} zoomControl={true} attributionControl={false} preferCanvas={true}>
-                <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
+                <TileLayer url={`https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png${import.meta.env.VITE_CARTO_API_KEY ? `?key=${import.meta.env.VITE_CARTO_API_KEY}` : ''}`} />
                 <MapResizeHandler resizeSignal={mapResizeSignal} />
                 <MapAutoFit positions={fullRoute} selectedPositions={selRoute} />
                 <MapClickHandler gpsData={mapClickData} onPin={handlePin} />

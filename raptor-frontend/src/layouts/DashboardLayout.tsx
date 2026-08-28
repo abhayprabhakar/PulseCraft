@@ -2,6 +2,7 @@ import React from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { LayoutDashboard, User, Bike, ChevronRight, Settings } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import ImageWithFallback from '../components/ImageWithFallback';
 import '../styles/DashboardLayout.css';
 
 const DashboardLayout: React.FC = () => {
@@ -41,7 +42,7 @@ const DashboardLayout: React.FC = () => {
                 <div className="bike-profile-card" onClick={() => navigate('/select-bike')}>
                     <div className="bike-icon">
                         {currentBike?.image_url ? (
-                            <img src={getAvatarUrl(currentBike.image_url)!} alt={currentBike.name} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+                            <ImageWithFallback src={getAvatarUrl(currentBike.image_url)!} alt={currentBike.name} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
                         ) : (
                             <Bike size={20} />
                         )}
@@ -66,7 +67,7 @@ const DashboardLayout: React.FC = () => {
                     </NavLink>
                     <NavLink to="/profile" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
                         {user?.profile_picture_url ? (
-                            <img
+                            <ImageWithFallback
                                 src={getAvatarUrl(user.profile_picture_url)!}
                                 alt="Profile"
                                 style={{ width: '20px', height: '20px', borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--accent-primary)' }}
@@ -87,7 +88,7 @@ const DashboardLayout: React.FC = () => {
                     <div className="user-profile" onClick={() => navigate('/settings')} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <span>{user?.full_name || user?.email || 'Rider'}</span>
                         {user?.profile_picture_url ? (
-                            <img
+                            <ImageWithFallback
                                 src={getAvatarUrl(user.profile_picture_url)!}
                                 alt="Profile"
                                 style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--accent-primary)' }}

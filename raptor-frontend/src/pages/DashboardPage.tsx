@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ridesApi, RideSummary } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import MiniRideMap from '../components/Map/MiniRideMap';
-import { Clock, Upload, Trash2, ChevronRight, MapPin, Route, Timer, Bike, Flame, LayoutGrid, List as ListIcon, Filter, Search, ChevronDown } from 'lucide-react';
+import { Clock, Upload, Trash2, ChevronRight, MapPin, Route, Timer, Bike, Flame, LayoutGrid, List as ListIcon, Filter, Search, ChevronDown, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 type DashboardRidesCache = {
@@ -52,6 +52,7 @@ const DashboardPage: React.FC = () => {
     const [allRides, setAllRides] = useState<RideSummary[]>(dashboardRidesCache.allRides);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [uploading, setUploading] = useState(false);
+    const [isRefreshing, setIsRefreshing] = useState(false);
     const [loadingOverview, setLoadingOverview] = useState(!dashboardRidesCache.hasFetched);
     const navigate = useNavigate();
 
@@ -125,7 +126,6 @@ const DashboardPage: React.FC = () => {
         if (dashboardRidesCache.hasFetched) {
             setAllRides(dashboardRidesCache.allRides);
             setLoadingOverview(false);
-            loadRides({ silent: true });
             return;
         }
 
@@ -232,6 +232,12 @@ const DashboardPage: React.FC = () => {
         }
     };
 
+    const handleRefresh = async () => {
+        setIsRefreshing(true);
+        await loadRides({ silent: true });
+        setIsRefreshing(false);
+    };
+
     const handleDelete = async (e: React.MouseEvent, rideId: string) => {
         e.stopPropagation(); // Prevent navigation when clicking delete
         if (window.confirm("Are you sure you want to delete this session? This action cannot be undone.")) {
@@ -260,6 +266,14 @@ const DashboardPage: React.FC = () => {
                         </p>
                     </div>
                     <div className="actions">
+                        <button
+                            className="btn-refresh"
+                            onClick={handleRefresh}
+                            disabled={isRefreshing || uploading}
+                        >
+                            <RefreshCw size={18} className={isRefreshing ? 'spinning' : ''} />
+                            {isRefreshing ? 'Refreshing...' : 'Refresh'}
+                        </button>
                         <input
                             type="file"
                             ref={fileInputRef}
@@ -708,6 +722,45 @@ const DashboardPage: React.FC = () => {
                     opacity: 0.5; 
                     cursor: not-allowed; 
                     transform: none;
+                }
+                
+                .actions {
+                    display: flex;
+                    gap: 1rem;
+                    align-items: center;
+                }
+
+                .btn-refresh {
+                    background: var(--bg-card, rgba(255, 255, 255, 0.05));
+                    color: white;
+                    border: 1px solid var(--border-color, rgba(255,255,255,0.1));
+                    padding: 0.6rem 1.2rem;
+                    border-radius: 8px;
+                    display: flex;
+                    align-items: center;
+                    gap: 0.5rem;
+                    font-size: 0.9rem;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                }
+                
+                .btn-refresh:hover:not(:disabled) {
+                    background: rgba(255, 255, 255, 0.1);
+                }
+                
+                .btn-refresh:disabled {
+                    opacity: 0.5;
+                    cursor: not-allowed;
+                }
+                
+                .spinning {
+                    animation: spin 1s linear infinite;
+                }
+                
+                @keyframes spin {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
                 }
 
                 /* ── Toolbar ── */

@@ -87,7 +87,7 @@ const MiniRideMap: React.FC<MiniRideMapProps> = ({ rideId }) => {
                     doubleClickZoom={false}
                     touchZoom={false}
                 >
-                    {showMapTiles && <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />}
+                    {showMapTiles && <TileLayer url={`https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png${import.meta.env.VITE_CARTO_API_KEY ? `?key=${import.meta.env.VITE_CARTO_API_KEY}` : ''}`} />}
                     {segments.map((seg, i) => (
                         <Polyline
                             key={i}

@@ -10,6 +10,15 @@ Production-ready React + TypeScript frontend for the RAPTOR track simulation pla
 - **Axios** - HTTP client
 - **CSS3** - Premium motorsport styling
 
+## ⚙️ Environment Variables
+
+Create a `.env` file in the root of `raptor-frontend` to configure API keys and settings:
+
+```env
+# Optional: Used for loading CARTO base maps at higher rate limits
+VITE_CARTO_API_KEY=your_carto_api_key_here
+```
+
 ## 📦 Installation
 
 ```bash

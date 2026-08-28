@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { User, Mail, LogOut, Calendar, Camera } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { UserStats } from '../types/user';
+import ImageWithFallback from '../components/ImageWithFallback';
 
 const ProfilePage: React.FC = () => {
     const { user, refreshProfile, logout } = useAuth();
@@ -75,7 +76,7 @@ const ProfilePage: React.FC = () => {
                     <div className="profile-header">
                         <div className="avatar-container">
                             {user.profile_picture_url ? (
-                                <img src={getAvatarUrl(user.profile_picture_url)!} alt="Profile" className="avatar-img" />
+                                <ImageWithFallback src={getAvatarUrl(user.profile_picture_url)!} alt="Profile" className="avatar-img" />
                             ) : (
                                 <div className="avatar-placeholder">
                                     {user.full_name?.charAt(0) || user.email.charAt(0)}

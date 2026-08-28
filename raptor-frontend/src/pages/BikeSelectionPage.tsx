@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Bike, Check, Edit2, Trash2 } from 'lucide-react';
 import { bikesApi } from '../services/api';
 import { BikeCreate } from '../types/bike';
+import ImageWithFallback from '../components/ImageWithFallback';
 
 const BikeSelectionPage: React.FC = () => {
     const { bikes, selectBike, refreshBikes, currentBike } = useAuth();
@@ -125,7 +126,7 @@ const BikeSelectionPage: React.FC = () => {
                                 position: 'relative'
                             }}>
                                 {bike.image_url ? (
-                                    <img src={getAvatarUrl(bike.image_url)!} alt={bike.name} style={{ width: '100%', height: '100%', objectFit: 'contain', padding: '10px' }} />
+                                    <ImageWithFallback src={getAvatarUrl(bike.image_url)!} alt={bike.name} style={{ width: '100%', height: '100%', objectFit: 'contain', padding: '10px' }} />
                                 ) : (
                                     <Bike size={48} style={{ color: bike.color || '#666' }} />
                                 )}
