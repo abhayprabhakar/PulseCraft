@@ -3130,7 +3130,7 @@ def get_ride(ride_id: str, db: Session = Depends(database.get_db), current_user:
     if not ride:
         raise HTTPException(status_code=404, detail="Ride not found")
     if ride.owner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to view this ride")
+        raise HTTPException(status_code=403, detail=f"Not authorized to view this ride (owner: {ride.owner_id} [{type(ride.owner_id).__name__}], user: {current_user.id} [{type(current_user.id).__name__}], ride: {ride_id})")
     
     _decorate_ride_response(ride, map_points_limit=2000)
     
@@ -3185,7 +3185,7 @@ def get_ride_analysis(
         raise HTTPException(status_code=404, detail="Ride not found")
     
     if ride.owner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to view this analysis")
+        raise HTTPException(status_code=403, detail=f"Not authorized to view this analysis (owner: {ride.owner_id}, user: {current_user.id}, ride: {ride_id})")
 
     if not force_refresh and ride.analysis_blob:
         cached_blob = ride.analysis_blob if isinstance(ride.analysis_blob, dict) else {}
