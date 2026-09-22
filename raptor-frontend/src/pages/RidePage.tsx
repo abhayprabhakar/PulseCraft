@@ -401,7 +401,11 @@ function AnalysisTab({ rideId }: { rideId: string }) {
                 setSelectedEventTimestamp(null);
                 setFocusedEventPoint(null);
             })
-            .catch(() => setError('Failed to load analysis data.'))
+            .catch((err) => {
+                console.error("Analysis load error:", err);
+                const errMsg = err?.response?.data?.detail || err?.message || String(err);
+                setError(`Failed to load analysis data: ${errMsg}`);
+            })
             .finally(() => setLoading(false));
     }, [rideId]);
 

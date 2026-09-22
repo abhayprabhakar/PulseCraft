@@ -1,5 +1,4 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { ridesApi } from '../../services/api';
 import { MapContainer, TileLayer, Polyline, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -37,29 +36,12 @@ const BoundsFitter: React.FC<{ segments: any[] }> = ({ segments }) => {
 };
 
 interface MiniRideMapProps {
-    rideId: string;
+    points: [number, number][];
 }
 
-const MiniRideMap: React.FC<MiniRideMapProps> = ({ rideId }) => {
+const MiniRideMap: React.FC<MiniRideMapProps> = ({ points }) => {
     const ref = useRef<HTMLDivElement>(null);
     const inView = useOnScreen(ref, '400px'); // proactively fetch offscreen
-
-    const [segments, setSegments] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
-
-    useEffect(() => {
-        if (!inView) return;
-        let mounted = true;
-        ridesApi.getAnalysis(rideId).then(data => {
-            if (mounted) {
-                setSegments(data.map_segments || []);
-                setLoading(false);
-            }
-        }).catch(() => {
-            if (mounted) setLoading(false);
-        });
-        return () => { mounted = false; };
-    }, [rideId, inView]);
 
     const showMapTiles = localStorage.getItem('grid_map_enabled') !== '0';
 
@@ -67,17 +49,17 @@ const MiniRideMap: React.FC<MiniRideMapProps> = ({ rideId }) => {
 
     return (
         <div ref={ref} style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, borderRadius: '12px', overflow: 'hidden', background: !showMapTiles ? dotGrid : undefined }}>
-            {(!inView || loading) ? (
+            {(!inView) ? (
                 <div style={{ height: '100%', width: '100%', display: 'flex', alignItems: 'center', justifyItems: 'center', justifyContent: 'center', background: '#1c1c1e' }}>
                     <Loader2 className="animate-spin" size={24} color="#555" />
                 </div>
-            ) : segments.length === 0 ? (
+            ) : points.length === 0 ? (
                 <div style={{ height: '100%', width: '100%', display: 'flex', alignItems: 'center', justifyItems: 'center', justifyContent: 'center', background: '#1c1c1e', color: '#555' }}>
                     <MapIcon size={24} />
                 </div>
             ) : (
                 <MapContainer
-                    center={segments[0].start as [number, number] || [0,0]}
+                    center={points[0] || [0,0]}
                     zoom={13}
                     style={{ height: '100%', width: '100%', background: 'transparent' }}
                     attributionControl={false}
@@ -88,14 +70,11 @@ const MiniRideMap: React.FC<MiniRideMapProps> = ({ rideId }) => {
                     touchZoom={false}
                 >
                     {showMapTiles && <TileLayer url={`https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png${import.meta.env.VITE_CARTO_API_KEY ? `?key=${import.meta.env.VITE_CARTO_API_KEY}` : ''}`} />}
-                    {segments.map((seg, i) => (
-                        <Polyline
-                            key={i}
-                            positions={[seg.start as [number, number], seg.end as [number, number]]}
-                            pathOptions={{ color: '#ef4444', weight: 2.5, opacity: 1, lineCap: 'round', lineJoin: 'round' }}
-                        />
-                    ))}
-                    <BoundsFitter segments={segments} />
+                    <Polyline
+                        positions={points}
+                        pathOptions={{ color: '#ef4444', weight: 2.5, opacity: 1, lineCap: 'round', lineJoin: 'round' }}
+                    />
+                    <BoundsFitter segments={points.map((p, i) => i < points.length - 1 ? { start: p, end: points[i + 1] } : { start: p, end: p })} />
                 </MapContainer>
             )}
             

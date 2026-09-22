@@ -118,6 +118,7 @@ export interface RideSummary {
     max_rpm?: number;
     total_distance_km: number;
     bike_id?: number;
+    map_preview_points?: [number, number][];
 }
 
 export interface RideAnalysis {

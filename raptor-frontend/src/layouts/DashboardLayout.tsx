@@ -1,12 +1,12 @@
 import React from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { LayoutDashboard, User, Bike, ChevronRight, Settings } from 'lucide-react';
+import { LayoutDashboard, User, Bike, ChevronRight, Settings, LogOut } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import ImageWithFallback from '../components/ImageWithFallback';
 import '../styles/DashboardLayout.css';
 
 const DashboardLayout: React.FC = () => {
-    const { currentBike, user } = useAuth();
+    const { currentBike, user, logout } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
     const garageTarget = currentBike ? `/garage/${currentBike.id}` : '/select-bike';
@@ -79,6 +79,10 @@ const DashboardLayout: React.FC = () => {
                         <Settings size={20} />
                         <span>Settings</span>
                     </NavLink>
+                    <button className="nav-item" onClick={logout} style={{ background: 'transparent', border: 'none', color: 'inherit', textAlign: 'left', width: '100%', cursor: 'pointer', fontFamily: 'inherit', fontSize: 'inherit', marginTop: 'auto' }}>
+                        <LogOut size={20} />
+                        <span>Logout</span>
+                    </button>
                 </nav>
             </aside>
 

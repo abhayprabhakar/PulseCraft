@@ -2049,6 +2049,10 @@ def _parse_ride_create_payload(
         raise HTTPException(status_code=422, detail=f"Invalid ride upload fields: {str(exc)}")
 
 
+from fastapi.responses import Response
+import json
+
+
 def _persist_uploaded_ride(ride_data: RideCreate, db: Session, current_user: User):
     existing = db.query(Ride).filter(Ride.id == ride_data.id).first()
     if existing:
@@ -3120,15 +3124,37 @@ def revoke_ride_share_link(
         db.commit()
     return None
 
-@router.get("/{ride_id}", response_model=RideDetail)
+@router.get("/{ride_id}")
 def get_ride(ride_id: str, db: Session = Depends(database.get_db), current_user: User = Depends(auth.get_current_user)):
     ride = db.query(Ride).filter(Ride.id == ride_id).first()
     if not ride:
         raise HTTPException(status_code=404, detail="Ride not found")
     if ride.owner_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to view this ride")
-    _decorate_ride_response(ride)
-    return ride
+    
+    _decorate_ride_response(ride, map_points_limit=2000)
+    
+    # Construct dict manually and dump to JSON string to bypass extremely slow jsonable_encoder
+    resp_dict = {
+        "id": ride.id,
+        "title": ride.title,
+        "started_at": ride.started_at.isoformat() if ride.started_at else None,
+        "ended_at": ride.ended_at.isoformat() if ride.ended_at else None,
+        "duration_seconds": ride.duration_seconds,
+        "max_speed": ride.max_speed,
+        "avg_speed": ride.avg_speed,
+        "max_lean_left": ride.max_lean_left,
+        "max_lean_right": ride.max_lean_right,
+        "max_rpm": ride.max_rpm,
+        "total_distance_km": ride.total_distance_km,
+        "bike_id": ride.bike_id,
+        "owner_name": getattr(ride, "owner_name", None),
+        "bike_name": getattr(ride, "bike_name", None),
+        "map_preview_points": getattr(ride, "map_preview_points", []),
+        "telemetry_blob": ride.telemetry_blob,
+        "laps": ride.laps
+    }
+    return Response(content=json.dumps(resp_dict), media_type="application/json")
 
 @router.put("/{ride_id}/update", response_model=RideSummary)
 def update_ride(ride_id: str, payload: RideUpdate, db: Session = Depends(database.get_db), current_user: User = Depends(auth.get_current_user)):
@@ -3147,7 +3173,7 @@ def update_ride(ride_id: str, payload: RideUpdate, db: Session = Depends(databas
     _decorate_ride_response(ride)
     return ride
 
-@router.get("/{ride_id}/analysis", response_model=RideAnalysisResponse)
+@router.get("/{ride_id}/analysis")
 def get_ride_analysis(
     ride_id: str,
     force_refresh: bool = Query(False),
@@ -3179,9 +3205,9 @@ def get_ride_analysis(
             ride.analysis_blob = sanitized_cached
             ride.analysis_updated_at = datetime.utcnow()
             db.commit()
-            return sanitized_cached
+            return Response(content=json.dumps(sanitized_cached), media_type="application/json")
 
-        return ride.analysis_blob
+        return Response(content=json.dumps(ride.analysis_blob), media_type="application/json")
 
     if not ride.telemetry_blob:
         raise HTTPException(status_code=400, detail="No telemetry data")

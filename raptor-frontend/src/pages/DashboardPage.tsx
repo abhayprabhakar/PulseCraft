@@ -440,7 +440,7 @@ const DashboardPage: React.FC = () => {
                                     >
                                         {viewMode === 'grid' && (
                                             <div className="card-map-bg">
-                                                <MiniRideMap rideId={ride.id} />
+                                                <MiniRideMap points={ride.map_preview_points || []} />
                                             </div>
                                         )}
                                         <div className="rc-header">
