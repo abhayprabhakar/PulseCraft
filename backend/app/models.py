@@ -28,6 +28,7 @@ class Ride(Base):
     telemetry_blob = Column(JSON, nullable=True) 
     laps = Column(JSON, nullable=True)
     analysis_blob = Column(JSON, nullable=True)
+    map_preview_blob = Column(JSON, nullable=True)
     analysis_updated_at = Column(DateTime, nullable=True)
 
     title = Column(String, default="Untitled Ride")

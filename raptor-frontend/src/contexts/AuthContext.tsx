@@ -106,6 +106,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setToken(null);
         setCurrentBike(null);
         localStorage.removeItem('currentBike');
+        localStorage.removeItem('raptor_dashboard_rides_v1');
         setUser(null);
     };
 

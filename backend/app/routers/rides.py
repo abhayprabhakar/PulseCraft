@@ -2320,11 +2320,20 @@ def _decorate_ride_response(ride: Ride, map_points_limit: int = 140) -> None:
     owner_name = (ride.owner.full_name or ride.owner.email) if ride.owner else None
     setattr(ride, "owner_name", owner_name)
     setattr(ride, "bike_name", _bike_display_name(ride))
-    setattr(
-        ride,
-        "map_preview_points",
-        _extract_share_map_points(getattr(ride, "telemetry_blob", None), max_points=map_points_limit),
-    )
+    
+    if hasattr(ride, "map_preview_blob") and ride.map_preview_blob is not None:
+        setattr(ride, "map_preview_points", ride.map_preview_blob)
+    else:
+        from sqlalchemy import inspect
+        try:
+            if "telemetry_blob" in inspect(ride).unloaded:
+                setattr(ride, "map_preview_points", [])
+                return
+        except Exception:
+            pass
+            
+        points = _extract_share_map_points(getattr(ride, "telemetry_blob", None), max_points=map_points_limit)
+        setattr(ride, "map_preview_points", points)
 
 
 def _render_shared_ride_page(token: str, ride: Ride, request: Request) -> str:
@@ -2859,42 +2868,22 @@ async def upload_csv(bike_id: int = None, file: UploadFile = File(...), db: Sess
         raise HTTPException(status_code=400, detail=f"Failed to process upload: {str(e)}")
 
 
+from sqlalchemy.orm import defer
+
 @router.get("/", response_model=List[RideSummary])
 def list_rides(skip: int = 0, limit: int = 50, bike_id: int = None, db: Session = Depends(database.get_db), current_user: User = Depends(auth.get_current_user)):
-    query = db.query(Ride).filter(Ride.owner_id == current_user.id)
+    query = db.query(Ride).options(
+        defer(Ride.telemetry_blob),
+        defer(Ride.analysis_blob)
+    ).filter(Ride.owner_id == current_user.id)
     if bike_id is not None:
         from sqlalchemy import or_
         query = query.filter(or_(Ride.bike_id == bike_id, Ride.bike_id.is_(None)))
     rides = query.order_by(Ride.started_at.desc()).offset(skip).limit(limit).all()
 
-    # Lazy backfill duration for rides that had the old stub (duration=0)
     for ride in rides:
         if ride.laps is None:
             ride.laps = []
-        if ride.duration_seconds == 0 and ride.telemetry_blob:
-            df = pd.DataFrame(ride.telemetry_blob)
-            print(f"DEBUG backfill ride={ride.id}: cols={df.columns.tolist()[:8]}, rows={len(df)}")
-            computed = compute_duration_seconds(df)
-            print(f"DEBUG backfill ride={ride.id}: computed duration={computed}s")
-            if computed > 0:
-                db.query(Ride).filter(Ride.id == ride.id).update({"duration_seconds": computed})
-                ride.duration_seconds = computed
-        # Lazy backfill total_distance_km for rides uploaded before the fix
-        if (ride.total_distance_km is None or ride.total_distance_km == 0.0) and ride.telemetry_blob:
-            df_dist = pd.DataFrame(ride.telemetry_blob)
-            if 'lat' in df_dist.columns and 'lng' in df_dist.columns:
-                lat_s = pd.to_numeric(df_dist['lat'], errors='coerce')
-                lng_s = pd.to_numeric(df_dist['lng'], errors='coerce')
-                valid = pd.DataFrame({'lat': lat_s, 'lng': lng_s}).dropna()
-                if len(valid) > 1:
-                    dists = _haversine_m(
-                        valid['lat'].values[:-1], valid['lng'].values[:-1],
-                        valid['lat'].values[1:],  valid['lng'].values[1:],
-                    )
-                    computed_dist = float(np.nansum(dists)) / 1000.0
-                    if computed_dist > 0:
-                        db.query(Ride).filter(Ride.id == ride.id).update({"total_distance_km": computed_dist})
-                        ride.total_distance_km = computed_dist
         _decorate_ride_response(ride)
     db.commit()
 
@@ -2915,7 +2904,10 @@ def list_shared_feed(
         .all()
     ]
 
-    query = db.query(Ride).filter(Ride.owner_id != current_user.id)
+    query = db.query(Ride).options(
+        defer(Ride.telemetry_blob),
+        defer(Ride.analysis_blob)
+    ).filter(Ride.owner_id != current_user.id)
     if friend_ids:
         query = query.filter(
             or_(
