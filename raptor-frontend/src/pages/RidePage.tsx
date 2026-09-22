@@ -315,9 +315,8 @@ function TelemetryMap({ telemetryData, timeRange, pinnedPoint, hoveredPoint, map
         <>
             <MapContainer center={fullRoute[0]} zoom={15} style={{ height: '100%', width: '100%' }} zoomControl={true} attributionControl={false} preferCanvas={true}>
                 <TileLayer 
-                    url={`https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png${import.meta.env.VITE_CARTO_API_KEY ? `?key=${import.meta.env.VITE_CARTO_API_KEY}` : ''}`}
+                    url={`https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png${(import.meta.env.VITE_CARTO_API_KEY || import.meta.env.CARTO_API_KEY) ? `?key=${import.meta.env.VITE_CARTO_API_KEY || import.meta.env.CARTO_API_KEY}` : ''}`}
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, &copy; <a href="https://carto.com/attributions">CARTO</a>'
-                    subdomains="abcd"
                     maxZoom={20}
                 />
                 <MapResizeHandler resizeSignal={mapResizeSignal} />

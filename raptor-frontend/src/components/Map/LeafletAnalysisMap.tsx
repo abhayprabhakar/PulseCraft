@@ -103,8 +103,7 @@ const LeafletAnalysisMap: React.FC<LeafletAnalysisMapProps> = ({ segments, focus
             {/* Dark Matter Dark Theme Tiles */}
             <TileLayer
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, &copy; <a href="https://carto.com/attributions">CARTO</a>'
-                url={`https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png${import.meta.env.VITE_CARTO_API_KEY ? `?key=${import.meta.env.VITE_CARTO_API_KEY}` : ''}`}
-                subdomains="abcd"
+                url={`https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png${(import.meta.env.VITE_CARTO_API_KEY || import.meta.env.CARTO_API_KEY) ? `?key=${import.meta.env.VITE_CARTO_API_KEY || import.meta.env.CARTO_API_KEY}` : ''}`}
                 maxZoom={20}
             />
 

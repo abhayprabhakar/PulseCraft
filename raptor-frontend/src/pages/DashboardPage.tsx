@@ -9,14 +9,16 @@ type DashboardRidesCache = {
     hasFetched: boolean;
     signature: string;
     allRides: RideSummary[];
+    ownerId?: string | null;
 };
 
-const DASHBOARD_RIDES_CACHE_KEY = 'raptor_dashboard_rides_cache_v1';
+const DASHBOARD_RIDES_CACHE_KEY = 'raptor_dashboard_rides_cache_v2';
 
 const getDefaultDashboardCache = (): DashboardRidesCache => ({
     hasFetched: false,
     signature: '0',
     allRides: [],
+    ownerId: null,
 });
 
 const getPersistedDashboardCache = (): DashboardRidesCache => {
@@ -39,6 +41,7 @@ const getPersistedDashboardCache = (): DashboardRidesCache => {
             hasFetched: Boolean(parsed.hasFetched),
             signature: typeof parsed.signature === 'string' ? parsed.signature : '0',
             allRides: parsed.allRides,
+            ownerId: parsed.ownerId || null,
         };
     } catch {
         return getDefaultDashboardCache();
@@ -48,7 +51,7 @@ const getPersistedDashboardCache = (): DashboardRidesCache => {
 let dashboardRidesCache: DashboardRidesCache = getPersistedDashboardCache();
 
 const DashboardPage: React.FC = () => {
-    const { currentBike } = useAuth();
+    const { currentBike, user } = useAuth();
     const [allRides, setAllRides] = useState<RideSummary[]>(dashboardRidesCache.allRides);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [uploading, setUploading] = useState(false);
@@ -105,6 +108,7 @@ const DashboardPage: React.FC = () => {
                 hasFetched: true,
                 signature: nextSignature,
                 allRides: sortedAll,
+                ownerId: user?.id?.toString() || null,
             };
             persistDashboardCache(dashboardRidesCache);
 
@@ -123,14 +127,19 @@ const DashboardPage: React.FC = () => {
     };
 
     useEffect(() => {
-        if (dashboardRidesCache.hasFetched) {
+        // If the cache belongs to a different user, invalidate it immediately
+        if (dashboardRidesCache.hasFetched && dashboardRidesCache.ownerId && user?.id && dashboardRidesCache.ownerId !== user.id.toString()) {
+            dashboardRidesCache = getDefaultDashboardCache();
+            setAllRides([]);
+            setLoadingOverview(true);
+        } else if (dashboardRidesCache.hasFetched) {
             setAllRides(dashboardRidesCache.allRides);
             setLoadingOverview(false);
             return;
         }
 
         loadRides();
-    }, [currentBike?.id]);
+    }, [currentBike?.id, user?.id]);
 
     const rides = useMemo(() => {
         let list = allRides;
