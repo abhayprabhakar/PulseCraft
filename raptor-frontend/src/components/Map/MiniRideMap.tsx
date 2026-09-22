@@ -69,7 +69,12 @@ const MiniRideMap: React.FC<MiniRideMapProps> = ({ points }) => {
                     doubleClickZoom={false}
                     touchZoom={false}
                 >
-                    {showMapTiles && <TileLayer url={`https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png${import.meta.env.VITE_CARTO_API_KEY ? `?key=${import.meta.env.VITE_CARTO_API_KEY}` : ''}`} />}
+                    {showMapTiles && <TileLayer 
+                        url={`https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png${import.meta.env.VITE_CARTO_API_KEY ? `?key=${import.meta.env.VITE_CARTO_API_KEY}` : ''}`}
+                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, &copy; <a href="https://carto.com/attributions">CARTO</a>'
+                        subdomains="abcd"
+                        maxZoom={20}
+                    />}
                     <Polyline
                         positions={points}
                         pathOptions={{ color: '#ef4444', weight: 2.5, opacity: 1, lineCap: 'round', lineJoin: 'round' }}
