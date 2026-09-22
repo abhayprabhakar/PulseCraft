@@ -86,7 +86,7 @@ const SignupPage: React.FC = () => {
                                 value={formData.full_name}
                                 onChange={handleChange}
                                 required
-                                placeholder="Abhay Prabhakar"
+                                placeholder="John Doe"
                             />
                         </div>
                     </div>
@@ -100,7 +100,7 @@ const SignupPage: React.FC = () => {
                                 value={formData.email}
                                 onChange={handleChange}
                                 required
-                                placeholder="rider@raptor.dev"
+                                placeholder="john.doe@example.com"
                             />
                         </div>
                     </div>
