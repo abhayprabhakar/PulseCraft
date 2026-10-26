@@ -33,6 +33,12 @@ database_url = os.getenv("DATABASE_URL") or os.getenv("SQLALCHEMY_DATABASE_URL")
 if database_url:
     if database_url.startswith("postgres://"):
         database_url = database_url.replace("postgres://", "postgresql://", 1)
+    if database_url.startswith("postgresql+psycopg://"):
+        database_url = database_url.replace(
+            "postgresql+psycopg://",
+            "postgresql+psycopg2://",
+            1,
+        )
     SQLALCHEMY_DATABASE_URL = database_url
 else:
     db_file_path = _resolve_sqlite_db_path()

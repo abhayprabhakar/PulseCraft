@@ -2,12 +2,18 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.models import Ride, User
 from app.schemas import RideAnalysisResponse, RideDetail
 
-DATABASE_URL = "postgresql://postgres.vjofrzrdwmchtcsxapno:7%3F%404G%2BM%25_qrDY-h@aws-1-ap-northeast-1.pooler.supabase.com:6543/postgres"
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL must be set before running test_ride.py")
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
