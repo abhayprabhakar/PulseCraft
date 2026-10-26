@@ -1,8 +1,9 @@
 import sys
 import os
+import getpass
 
 # Add current directory to path so we can import app modules
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "backend"))
 
 from app.database import SessionLocal
 from app.models import User
@@ -46,15 +47,32 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage:")
         print("  List users:               python reset_password.py list")
-        print("  Reset password:           python reset_password.py <email_or_username> <new_password>")
+        print("  Reset password:           python reset_password.py <email_or_username>")
+        print("  Visible password input:   python reset_password.py <email_or_username> --show-password")
         sys.exit(1)
 
     cmd = sys.argv[1]
     if cmd == "list":
         list_users()
+    elif len(sys.argv) >= 3 and sys.argv[2] == "--show-password":
+        identifier = sys.argv[1]
+        new_password = input("New password (visible): ")
+        confirmation = input("Confirm password (visible): ")
+        if new_password != confirmation:
+            print("Error: Passwords do not match.")
+            sys.exit(1)
+        if not new_password:
+            print("Error: Password cannot be empty.")
+            sys.exit(1)
+        reset_password(identifier, new_password)
     elif len(sys.argv) >= 3:
         identifier = sys.argv[1]
         new_password = sys.argv[2]
         reset_password(identifier, new_password)
     else:
-        print("Please provide a new password. Usage: python reset_password.py <email_or_username> <new_password>")
+        identifier = sys.argv[1]
+        new_password = getpass.getpass("New password (input hidden): ")
+        if not new_password:
+            print("Error: Password cannot be empty.")
+            sys.exit(1)
+        reset_password(identifier, new_password)

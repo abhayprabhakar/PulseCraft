@@ -95,7 +95,7 @@ def _fetch_hourly_weather(
     for timestamp, temperature, humidity in zip(times, temperatures, humidities):
         if temperature is None or humidity is None:
             continue
-        values[str(timestamp)[:13]] = (float(temperature), float(humidity))
+        values[str(timestamp)[:16]] = (float(temperature), float(humidity))
     return values
 
 
