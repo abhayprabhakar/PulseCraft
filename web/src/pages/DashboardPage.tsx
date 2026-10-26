@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ridesApi, RideSummary } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import MiniRideMap from '../components/Map/MiniRideMap';
-import { Clock, Upload, Trash2, ChevronRight, MapPin, Route, Timer, Bike, Flame, LayoutGrid, List as ListIcon, Filter, Search, ChevronDown, RefreshCw } from 'lucide-react';
+import { Clock, Upload, Trash2, ChevronRight, MapPin, Route, Timer, Bike, Flame, LayoutGrid, List as ListIcon, Filter, Search, ChevronDown, RefreshCw, Thermometer, Droplets } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 type DashboardRidesCache = {
@@ -489,6 +489,14 @@ const DashboardPage: React.FC = () => {
                                                 <Clock size={14} />
                                                 <span>{(ride.duration_seconds / 60).toFixed(0)} min</span>
                                             </div>
+                                            {ride.weather_fetch_status === 'success' && (
+                                                <div className="ride-weather-chip" title="Weather captured at the ride location">
+                                                    <Thermometer size={13} />
+                                                    <span>{Number(ride.weather_temp_c).toFixed(0)}°C</span>
+                                                    <Droplets size={13} />
+                                                    <span>{Number(ride.weather_humidity_pct).toFixed(0)}%</span>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 );
@@ -1094,6 +1102,17 @@ const DashboardPage: React.FC = () => {
                 }
                 
                 .ride-stats { display: flex; gap: 0.8rem; }
+                .ride-weather-chip {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 0.3rem;
+                    margin-left: auto;
+                    color: #a7fff0;
+                    font-size: 0.78rem;
+                    font-weight: 700;
+                    letter-spacing: 0.02em;
+                    white-space: nowrap;
+                }
                 .stat-pill { 
                     display: flex; 
                     align-items: center; 

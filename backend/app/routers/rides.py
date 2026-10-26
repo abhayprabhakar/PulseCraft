@@ -2102,7 +2102,13 @@ def _persist_uploaded_ride(ride_data: RideCreate, db: Session, current_user: Use
         laps=laps,
         visibility="private",
         owner_id=current_user.id,
-        bike_id=ride_data.bike_id
+        bike_id=ride_data.bike_id,
+        weather_temp_c=ride_data.weather_temp_c,
+        weather_humidity_pct=ride_data.weather_humidity_pct,
+        weather_source=ride_data.weather_source,
+        weather_observed_at=_normalize_optional_datetime(ride_data.weather_observed_at),
+        weather_fetch_status=ride_data.weather_fetch_status,
+        weather_fetch_error=ride_data.weather_fetch_error,
     )
 
     db.add(new_ride)
@@ -3144,7 +3150,13 @@ def get_ride(ride_id: str, db: Session = Depends(database.get_db), current_user:
         "bike_name": getattr(ride, "bike_name", None),
         "map_preview_points": getattr(ride, "map_preview_points", []),
         "telemetry_blob": ride.telemetry_blob,
-        "laps": ride.laps
+        "laps": ride.laps,
+        "weather_temp_c": ride.weather_temp_c,
+        "weather_humidity_pct": ride.weather_humidity_pct,
+        "weather_source": ride.weather_source,
+        "weather_observed_at": ride.weather_observed_at.isoformat() if ride.weather_observed_at else None,
+        "weather_fetch_status": ride.weather_fetch_status,
+        "weather_fetch_error": ride.weather_fetch_error,
     }
     return Response(content=json.dumps(resp_dict), media_type="application/json")
 

@@ -35,6 +35,13 @@ class Ride(Base):
     notes = Column(String, nullable=True)
     visibility = Column(String, nullable=False, default="private", index=True)
 
+    weather_temp_c = Column(Float, nullable=True)
+    weather_humidity_pct = Column(Float, nullable=True)
+    weather_source = Column(String, nullable=True)
+    weather_observed_at = Column(DateTime, nullable=True)
+    weather_fetch_status = Column(String, nullable=True)
+    weather_fetch_error = Column(String, nullable=True)
+
     owner_id = Column(Integer, ForeignKey("users.id"))
     owner = relationship("User", back_populates="rides")
     

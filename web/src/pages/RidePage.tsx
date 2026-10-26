@@ -8,7 +8,7 @@ import {
 import { MapContainer, TileLayer, Polyline, CircleMarker, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Activity, Shield, Map as MapIcon, Gauge, AlertTriangle } from 'lucide-react';
-import { ridesApi, RideAnalysis, AiPersona, LlmProviderOption } from '../services/api';
+import { ridesApi, RideAnalysis, RideDetail, AiPersona, LlmProviderOption } from '../services/api';
 import AnalysisMap from '../components/Map/AnalysisMap';
 import GearUsageChart from '../components/analytics/GearUsageChart';
 import EventTimeline from '../components/analytics/EventTimeline';
@@ -374,12 +374,14 @@ function AnalysisTab({ rideId }: { rideId: string }) {
     const [analysisTelemetry, setAnalysisTelemetry] = useState<TelemetryPoint[]>([]);
     const [selectedEventTimestamp, setSelectedEventTimestamp] = useState<string | null>(null);
     const [focusedEventPoint, setFocusedEventPoint] = useState<[number, number] | null>(null);
+    const [rideDetail, setRideDetail] = useState<RideDetail | null>(null);
 
     useEffect(() => {
         setLoading(true);
         Promise.all([ridesApi.getAnalysis(rideId), ridesApi.getDetail(rideId)])
             .then(([analysisData, detail]) => {
                 setAnalysis(analysisData);
+                setRideDetail(detail);
                 setError(null);
 
                 const formattedTelemetry: TelemetryPoint[] =
@@ -576,6 +578,19 @@ function AnalysisTab({ rideId }: { rideId: string }) {
     });
 
     const coaching = analysis.coaching;
+    const temperature = rideDetail?.weather_temp_c;
+    const humidity = rideDetail?.weather_humidity_pct;
+    const hasWeather = rideDetail?.weather_fetch_status === 'success' &&
+        Number.isFinite(Number(temperature)) && Number.isFinite(Number(humidity));
+    const terrainCue = hasWeather
+        ? Number(humidity) >= 80
+            ? 'Moisture awareness'
+            : Number(temperature) <= 5
+                ? 'Cold-surface awareness'
+                : Number(temperature) >= 32
+                    ? 'Heat management'
+                    : 'Balanced conditions'
+        : 'Weather unavailable';
     const worstSegment = segmentAnalytics.length
         ? [...segmentAnalytics].sort((a, b) => (b.time_delta_vs_best_s || 0) - (a.time_delta_vs_best_s || 0))[0]
         : null;
@@ -649,6 +664,19 @@ function AnalysisTab({ rideId }: { rideId: string }) {
                         <strong>{Math.round(scorecards.risk_index ?? 0)}</strong>
                     </article>
                     <div className="ra-hero-mode">{sessionMode}</div>
+                </div>
+            </section>
+
+            <section className="ra-weather-strip">
+                <div className="ra-weather-heading">
+                    <span className="ra-eyebrow">RIDE CONDITIONS</span>
+                    <strong>{hasWeather ? terrainCue : 'No weather snapshot'}</strong>
+                    <p>{hasWeather ? 'Captured near the end of the ride. Use humidity as a surface-awareness cue across changing terrain.' : 'Weather will appear when the ride has a successful location snapshot.'}</p>
+                </div>
+                <div className="ra-weather-values">
+                    <div><span>Temperature</span><strong>{hasWeather ? `${Number(temperature).toFixed(0)}°C` : '—'}</strong></div>
+                    <div><span>Humidity</span><strong>{hasWeather ? `${Number(humidity).toFixed(0)}%` : '—'}</strong></div>
+                    <div><span>Terrain cue</span><strong>{terrainCue}</strong></div>
                 </div>
             </section>
 
@@ -1761,6 +1789,22 @@ export default function RidePage() {
                     letter-spacing: 0.14em;
                     font-weight: 700;
                 }
+                .ra-weather-strip {
+                    display: grid;
+                    grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.6fr);
+                    gap: 1rem;
+                    align-items: center;
+                    border: 1px solid rgba(67, 211, 190, 0.22);
+                    border-radius: 14px;
+                    padding: 1rem 1.2rem;
+                    background: linear-gradient(120deg, rgba(20, 72, 72, 0.32), rgba(255,255,255,0.025));
+                }
+                .ra-weather-heading strong { display: block; color: #b7fff2; font-size: 1.15rem; }
+                .ra-weather-heading p { margin: 0.35rem 0 0; color: var(--ra-text-soft); font-size: 0.87rem; line-height: 1.45; }
+                .ra-weather-values { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.6rem; }
+                .ra-weather-values div { min-width: 0; padding: 0.65rem 0.75rem; border-left: 1px solid rgba(255,255,255,0.1); }
+                .ra-weather-values span { display: block; color: var(--ra-text-muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; }
+                .ra-weather-values strong { display: block; margin-top: 0.25rem; color: #f5fffd; font-size: 1.05rem; overflow-wrap: anywhere; }
 
                 .ra-priority-row {
                     display: grid;
@@ -1912,6 +1956,8 @@ export default function RidePage() {
                     .ra-analysis-row { grid-template-columns: 1fr; }
                     .ra-hero { grid-template-columns: 1fr; }
                     .ra-hero-stats { justify-items: start; }
+                    .ra-weather-strip { grid-template-columns: 1fr; }
+                    .ra-weather-values div:first-child { border-left: 0; }
                     .ra-coaching-row { margin-top: 0.85rem; }
                     .ra-map-sticky { position: relative; top: 0; }
                 }

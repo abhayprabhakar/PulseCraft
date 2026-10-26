@@ -31,6 +31,12 @@ def _ensure_ride_schema_columns() -> None:
             'visibility':           "ALTER TABLE rides ADD COLUMN visibility VARCHAR DEFAULT 'private'",
             'analysis_blob':       f"ALTER TABLE rides ADD COLUMN analysis_blob {json_type}",
             'analysis_updated_at': f"ALTER TABLE rides ADD COLUMN analysis_updated_at {ts_type}",
+            'weather_temp_c':      "ALTER TABLE rides ADD COLUMN weather_temp_c FLOAT",
+            'weather_humidity_pct': "ALTER TABLE rides ADD COLUMN weather_humidity_pct FLOAT",
+            'weather_source':      "ALTER TABLE rides ADD COLUMN weather_source VARCHAR",
+            'weather_observed_at': f"ALTER TABLE rides ADD COLUMN weather_observed_at {ts_type}",
+            'weather_fetch_status': "ALTER TABLE rides ADD COLUMN weather_fetch_status VARCHAR",
+            'weather_fetch_error': "ALTER TABLE rides ADD COLUMN weather_fetch_error VARCHAR",
         }
 
         for col_name, statement in migrations.items():

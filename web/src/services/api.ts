@@ -119,6 +119,17 @@ export interface RideSummary {
     total_distance_km: number;
     bike_id?: number;
     map_preview_points?: [number, number][];
+    weather_temp_c?: number | null;
+    weather_humidity_pct?: number | null;
+    weather_source?: string | null;
+    weather_observed_at?: string | null;
+    weather_fetch_status?: string | null;
+    weather_fetch_error?: string | null;
+}
+
+export interface RideDetail extends RideSummary {
+    telemetry_blob?: Record<string, unknown>[];
+    laps?: Record<string, unknown>[];
 }
 
 export interface RideAnalysis {
@@ -299,7 +310,7 @@ export const ridesApi = {
         return response.data;
     },
 
-    getDetail: async (rideId: string) => {
+    getDetail: async (rideId: string): Promise<RideDetail> => {
         const response = await api.get(`/api/v1/rides/${rideId}`);
         return response.data;
     },

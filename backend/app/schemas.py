@@ -31,6 +31,12 @@ class RideCreate(BaseModel):
     frames: List[dict] # Accepting raw dicts to be flexible with incoming JSON
     bike_id: Optional[int] = None
     laps: Optional[List[dict]] = []
+    weather_temp_c: Optional[float] = None
+    weather_humidity_pct: Optional[float] = None
+    weather_source: Optional[str] = None
+    weather_observed_at: Optional[datetime] = None
+    weather_fetch_status: Optional[str] = None
+    weather_fetch_error: Optional[str] = None
 
 class RideSummary(BaseModel):
     id: str
@@ -50,6 +56,12 @@ class RideSummary(BaseModel):
     visibility: Optional[str] = "private"
     owner_id: Optional[int] = None
     owner_name: Optional[str] = None
+    weather_temp_c: Optional[float] = None
+    weather_humidity_pct: Optional[float] = None
+    weather_source: Optional[str] = None
+    weather_observed_at: Optional[datetime] = None
+    weather_fetch_status: Optional[str] = None
+    weather_fetch_error: Optional[str] = None
 
     class Config:
         from_attributes = True
